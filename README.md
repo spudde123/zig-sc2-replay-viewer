@@ -29,10 +29,11 @@ The viewer uses X11/GLX; XWayland works on Wayland desktops. SC2 additionally
 needs a compatible EGL implementation, or an OSMesa library for software
 rendering. OSMesa support is untested.
 
-Replays require their exact SC2 base build/data version and map/cache data. The
-viewer reads replay metadata, then relaunches the matching installed binary
-with `-dataVersion`. Linux SC2 cannot download missing versions or maps
-automatically.
+The viewer assumes the headless Linux SC2 4.10 client and matching replays/game
+data. It launches the highest installed build once, reads replay metadata, and
+starts playback in that same process; it does not select a replay-specific build
+or pass `-dataVersion`. Required map/cache data must already be installed; Linux
+SC2 cannot download missing versions or maps automatically.
 
 ## Controls
 
