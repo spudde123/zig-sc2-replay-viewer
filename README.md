@@ -27,7 +27,7 @@ sudo dnf install libX11-devel libXi-devel libXcursor-devel mesa-libGL-devel alsa
 
 The viewer uses X11/GLX; XWayland works on Wayland desktops. SC2 additionally
 needs a compatible EGL implementation, or an OSMesa library for software
-rendering. OSMesa support is untested.
+rendering.
 
 The viewer assumes the headless Linux SC2 4.10 client and matching replays/game
 data. It launches the highest installed build once, reads replay metadata, and
