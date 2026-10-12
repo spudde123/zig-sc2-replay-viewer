@@ -29,11 +29,30 @@ The viewer uses X11/GLX; XWayland works on Wayland desktops. SC2 additionally
 needs a compatible EGL implementation, or an OSMesa library for software
 rendering.
 
+### Runtime dependencies (downloaded releases)
+
+Zig and development packages are not needed to run a release binary. Install
+these viewer graphics libraries and Mesa's EGL implementation if missing:
+
+```sh
+# Ubuntu / Debian
+sudo apt install libx11-6 libxi6 libxcursor1 libgl1 libegl1 libegl-mesa0
+
+# Fedora
+sudo dnf install libX11 libXi libXcursor mesa-libGL mesa-libEGL
+```
+
+A working graphics driver and X11/XWayland session are also required. Systems
+using proprietary drivers may need their vendor's EGL implementation instead
+of Mesa. These packages do not install SC2 or all of SC2's own dependencies.
+
+On Ubuntu / Debian x86-64, pass
+`--egl /usr/lib/x86_64-linux-gnu/libEGL.so.1`; the default is Fedora's
+`/usr/lib64/libEGL.so.1`.
+
 The viewer assumes the headless Linux SC2 4.10 client and matching replays/game
-data. It launches the highest installed build once, reads replay metadata, and
-starts playback in that same process; it does not select a replay-specific build
-or pass `-dataVersion`. Required map/cache data must already be installed; Linux
-SC2 cannot download missing versions or maps automatically.
+data. Required map data must already be installed; Linux
+SC2 cannot download maps automatically.
 
 ## Controls
 
