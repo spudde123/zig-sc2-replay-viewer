@@ -1,0 +1,23 @@
+.{
+    .name = .zig_sc2_replay_watcher,
+    .version = "0.0.0",
+    .fingerprint = 0xd6290bdf7834677e,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .@"zig-sc2" = .{
+            .path = "lib/zig-sc2",
+        },
+        .sokol = .{
+            .url = "git+https://github.com/floooh/sokol-zig.git#e12ece1c155fc7d2de91d3c6ad43617e2ab7e0ad",
+            .hash = "sokol-0.1.0-pb1HK8IpQgC9ftriVE32GjihKI4oR2BeXkWpp4HfV5wD",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "lib/zig-sc2",
+        "README.md",
+        ".gitmodules",
+    },
+}

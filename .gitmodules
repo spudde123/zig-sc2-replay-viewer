@@ -1,0 +1,3 @@
+[submodule "lib/zig-sc2"]
+	path = lib/zig-sc2
+	url = https://github.com/spudde123/zig-sc2
