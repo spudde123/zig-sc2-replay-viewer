@@ -4,11 +4,21 @@ const images = @import("image.zig");
 const Playback = @import("playback.zig").Playback;
 const player_labels = @import("player_labels.zig");
 
-pub const Camera = struct { x: f32, y: f32 };
+pub const Camera = struct {
+    x: f32,
+    y: f32,
+    distance: f32 = 40,
+
+    pub fn zoom(self: *Camera, steps: f32) void {
+        if (!std.math.isFinite(steps)) return;
+        self.distance = std.math.clamp(self.distance - steps * 4, 10, 100);
+    }
+};
 pub const Worker = struct {
     io: std.Io,
     allocator: std.mem.Allocator,
     config: sc2.ReplaySession.Config,
+    initial_distance: f32 = 40,
     mutex: std.Io.Mutex = .init,
     pending: ?images.Frame = null,
     failure: ?anyerror = null,
@@ -29,6 +39,25 @@ pub const Worker = struct {
     }
     pub fn unlock(self: *Worker) void {
         self.mutex.unlock(self.io);
+    }
+
+    /// Called by the GUI while holding the mutex. Camera requests coalesce.
+    pub fn requestZoom(self: *Worker, steps: f32) void {
+        if (!self.ready or self.ended) return;
+        var camera = self.requested_camera orelse self.camera;
+        camera.zoom(steps);
+        self.requested_camera = camera;
+    }
+
+    /// Called by the GUI while holding the mutex. Snapshot before assigning the
+    /// optional destination: reading it inside its own initializer can alias the
+    /// payload Zig is still constructing (including its uninitialized distance).
+    pub fn requestPosition(self: *Worker, x: f32, y: f32) void {
+        if (!self.ready or self.ended) return;
+        var camera = self.requested_camera orelse self.camera;
+        camera.x = std.math.clamp(x, 0, self.map_width);
+        camera.y = std.math.clamp(y, 0, self.map_height);
+        self.requested_camera = camera;
     }
 
     pub fn takeFrame(self: *Worker) ?images.Frame {
@@ -62,8 +91,9 @@ pub const Worker = struct {
         defer session.close();
         var obs = try session.observe();
         const labels = player_labels.capture(session.players[0..session.player_count], obs, session.map_width, session.map_height);
-        const camera = initialCamera(obs, session.map_width, session.map_height);
-        try session.client.moveObserverCamera(camera.x, camera.y);
+        var camera = initialCamera(obs, session.map_width, session.map_height);
+        camera.distance = self.initial_distance;
+        try session.client.setObserverCamera(camera.x, camera.y, camera.distance);
         _ = responses.reset(.retain_capacity);
         obs = try session.observe();
         try self.publish(obs, session.client.status);
@@ -96,13 +126,13 @@ pub const Worker = struct {
             // Observer actions are not valid once SC2 has transitioned to ended.
             const move = if (ended) null else self.requested_camera;
             self.requested_camera = null;
+            // Expose the submitted target before I/O so GUI movement keeps accumulating
+            // from it while SC2 is busy, rather than restarting from an older position.
+            if (move) |position| self.camera = position;
             self.unlock();
             const count = if (ended) 0 else if (step_once) 1 else scheduler.due(elapsed);
             if (move) |position| {
-                try session.client.moveObserverCamera(position.x, position.y);
-                self.lock();
-                self.camera = position;
-                self.unlock();
+                try session.client.setObserverCamera(position.x, position.y, position.distance);
             }
             if (count > 0) try session.advance(count);
             if (count > 0 or move != null) {
@@ -140,6 +170,39 @@ pub fn initialCamera(obs: sc2.sc2p.ResponseObservation, width: f32, height: f32)
         }
     }
     return .{ .x = width / 2, .y = height / 2 };
+}
+
+test "minimap positioning preserves current and pending zoom before scrolling" {
+    var worker: Worker = .{ .io = undefined, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" } };
+    worker.ready = true;
+    worker.camera.distance = 80;
+    worker.requestPosition(100, 120);
+    try std.testing.expectEqual(@as(f32, 80), worker.requested_camera.?.distance);
+    worker.requestZoom(1);
+    try std.testing.expectEqual(@as(f32, 76), worker.requested_camera.?.distance);
+    worker.requestPosition(50, 60);
+    try std.testing.expectEqual(@as(f32, 76), worker.requested_camera.?.distance);
+    try std.testing.expectEqual(@as(f32, 50), worker.requested_camera.?.x);
+    try std.testing.expectEqual(@as(f32, 60), worker.requested_camera.?.y);
+}
+
+test "zoom requests coalesce, preserve position, clamp and stop at replay end" {
+    var worker: Worker = .{ .io = undefined, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" } };
+    worker.requestZoom(1);
+    try std.testing.expect(worker.requested_camera == null);
+    worker.ready = true;
+    worker.requestZoom(1);
+    worker.requestZoom(2);
+    try std.testing.expectEqual(@as(f32, 28), worker.requested_camera.?.distance);
+    try std.testing.expectEqual(worker.camera.x, worker.requested_camera.?.x);
+    worker.requestZoom(100);
+    try std.testing.expectEqual(@as(f32, 10), worker.requested_camera.?.distance);
+    worker.requestZoom(-100);
+    try std.testing.expectEqual(@as(f32, 100), worker.requested_camera.?.distance);
+    worker.ended = true;
+    worker.requested_camera = null;
+    worker.requestZoom(1);
+    try std.testing.expect(worker.requested_camera == null);
 }
 
 test "observer initial camera chooses a participant, not self-classified resources" {

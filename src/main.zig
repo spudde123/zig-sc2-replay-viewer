@@ -20,6 +20,7 @@ const App = struct {
     current: ?images.Frame = null,
     elapsed: f64 = 0,
     failed: bool = false,
+    pan: @import("camera_pan.zig").Pan = .{},
 
     fn fromUserdata(ptr: ?*anyopaque) *App {
         return @ptrCast(@alignCast(ptr.?));
@@ -35,8 +36,15 @@ const App = struct {
             if (self.current) |old| old.deinit(self.worker.allocator);
             self.current = next;
         }
-        self.elapsed += sokol.app.frameDuration();
+        const dt = sokol.app.frameDuration();
+        self.elapsed += dt;
         self.worker.lock();
+        if (self.worker.ready and !self.worker.ended) {
+            var camera = self.worker.requested_camera orelse self.worker.camera;
+            if (self.pan.apply(&camera, dt, self.worker.map_width, self.worker.map_height)) {
+                self.worker.requested_camera = camera;
+            }
+        }
         const failure = self.worker.failure;
         const ready = self.worker.ready;
         const ended = self.worker.ended;
@@ -67,6 +75,14 @@ const App = struct {
 
     fn event(ev: [*c]const sokol.app.Event, ptr: ?*anyopaque) callconv(.c) void {
         const self = fromUserdata(ptr);
+        if (ev.*.type == .UNFOCUSED) {
+            // Key releases may be delivered elsewhere after losing focus.
+            self.pan.clear();
+            return;
+        }
+        if (ev.*.type == .KEY_DOWN or ev.*.type == .KEY_UP) {
+            if (self.pan.setKey(ev.*.key_code, ev.*.type == .KEY_DOWN)) return;
+        }
         self.worker.lock();
         defer self.worker.unlock();
         if (ev.*.type == .KEY_DOWN) {
@@ -88,29 +104,20 @@ const App = struct {
                 .RIGHT => if (self.worker.playback.paused and !self.worker.ended) {
                     self.worker.single_steps = @min(32, self.worker.single_steps + 1);
                 },
-                .W, .A, .S, .D => {
-                    var camera = self.worker.requested_camera orelse self.worker.camera;
-                    switch (ev.*.key_code) {
-                        .W => camera.y += 8,
-                        .S => camera.y -= 8,
-                        .A => camera.x -= 8,
-                        .D => camera.x += 8,
-                        else => unreachable,
-                    }
-                    camera.x = std.math.clamp(camera.x, 0, self.worker.map_width);
-                    camera.y = std.math.clamp(camera.y, 0, self.worker.map_height);
-                    self.worker.requested_camera = camera;
-                },
+                .EQUAL, .KP_ADD => self.worker.requestZoom(1),
+                .MINUS, .KP_SUBTRACT => self.worker.requestZoom(-1),
                 else => {},
             }
-        } else if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .LEFT and self.worker.ready) {
+        } else if (ev.*.type == .MOUSE_SCROLL) {
+            self.worker.requestZoom(ev.*.scroll_y);
+        } else if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .LEFT and self.worker.ready and !self.worker.ended) {
             // Sokol mouse coordinates and framebuffer coordinates are both physical pixels.
             const rect = self.renderer.minimap_rect;
             if (rect.contains(ev.*.mouse_x, ev.*.mouse_y)) {
-                self.worker.requested_camera = .{
-                    .x = (ev.*.mouse_x - rect.x) / rect.width * self.worker.map_width,
-                    .y = (1 - (ev.*.mouse_y - rect.y) / rect.height) * self.worker.map_height,
-                };
+                self.worker.requestPosition(
+                    (ev.*.mouse_x - rect.x) / rect.width * self.worker.map_width,
+                    (1 - (ev.*.mouse_y - rect.y) / rect.height) * self.worker.map_height,
+                );
             }
         }
     }
@@ -155,7 +162,7 @@ fn run(init: std.process.Init) !void {
     if (options.probe) return probe(allocator, init.io, options);
 
     var app: App = .{
-        .worker = .{ .io = init.io, .allocator = allocator, .config = options.session },
+        .worker = .{ .io = init.io, .allocator = allocator, .config = options.session, .initial_distance = options.camera_distance },
         .options = options,
     };
     defer {
@@ -223,7 +230,7 @@ fn renderProbe(allocator: std.mem.Allocator, io: std.Io, options: cli.Options) !
     defer session.close();
     const first = try session.observe();
     const camera = replay.initialCamera(first, session.map_width, session.map_height);
-    try session.client.moveObserverCamera(camera.x, camera.y);
+    try session.client.setObserverCamera(camera.x, camera.y, options.camera_distance);
     _ = responses.reset(.retain_capacity);
     var loops = options.probe_loops;
     while (loops > 0 and session.client.status != .ended) {

@@ -63,7 +63,7 @@ pub const Hud = struct {
         var duration_buffer: [16]u8 = undefined;
         const current = try formatGameTime(&current_buffer, game_loop);
         const duration = try formatGameTime(&duration_buffer, self.duration_loops);
-        return std.mem.printSentinel(buffer, "{s} / {s} | {d}x | {s}\nLoop {d} / {d}\nSpace pause | Up/Down speed | WASD camera", .{ current, duration, self.speed, @tagName(self.state), game_loop, self.duration_loops }, 0);
+        return std.mem.printSentinel(buffer, "{s} / {s} | {d}x | {s}\nLoop {d} / {d}\nSpace pause | Up/Down speed | WASD camera\nWheel or +/- zoom", .{ current, duration, self.speed, @tagName(self.state), game_loop, self.duration_loops }, 0);
     }
 };
 
@@ -206,7 +206,7 @@ test "HUD shows frame time, duration, speed, state and loop counts" {
     var buffer: [256]u8 = undefined;
     const hud: Hud = .{ .duration_loops = 14884, .speed = 0.25, .state = .paused };
     try std.testing.expectEqualStrings(
-        "01:00 / 11:04 | 0.25x | paused\nLoop 1344 / 14884\nSpace pause | Up/Down speed | WASD camera",
+        "01:00 / 11:04 | 0.25x | paused\nLoop 1344 / 14884\nSpace pause | Up/Down speed | WASD camera\nWheel or +/- zoom",
         try hud.format(&buffer, 1344),
     );
     const loading: Hud = .{};

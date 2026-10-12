@@ -9,4 +9,5 @@ test {
     _ = playback;
     _ = @import("renderer.zig");
     _ = @import("replay_worker.zig");
+    _ = @import("camera_pan.zig");
 }

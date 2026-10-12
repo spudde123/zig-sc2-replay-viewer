@@ -6,6 +6,7 @@ pub const Options = struct {
     probe: bool = false,
     capture: ?[]const u8 = null,
     probe_loops: u32 = 64,
+    camera_distance: f32 = 40,
     quit_after: ?f64 = null,
 };
 
@@ -17,13 +18,14 @@ pub const usage =
     \\  --osmesa PATH         Software rendering instead of EGL
     \\  --port PORT           API port (default: 5000)
     \\  --width N --height N  Render resolution (default: 640x480)
+    \\  --camera-distance N   Initial camera distance (10-100, default: 40)
     \\  --verbose-sc2         Show SC2's own stdout/stderr
     \\  --probe               Test replay rendering without opening a window
     \\  --probe-loops N       Loops to advance for probe (default: 64)
     \\  --capture PATH        Save final probe/displayed frame as PPM
     \\  --quit-after SECONDS  Automatically close window (smoke testing)
     \\Keys: Space pause; Up/Down or [ / ] speed; Right step paused; Escape quit.
-    \\Click minimap to move the camera. WASD pans the camera.
+    \\Click minimap to move the camera. WASD pans; mouse wheel or +/- zooms.
     \\
 ;
 
@@ -64,6 +66,9 @@ pub fn parse(args: []const []const u8) !Options {
             result.session.width = try std.fmt.parseInt(i32, value, 10);
         } else if (std.mem.eql(u8, key, "--height")) {
             result.session.height = try std.fmt.parseInt(i32, value, 10);
+        } else if (std.mem.eql(u8, key, "--camera-distance")) {
+            result.camera_distance = try std.fmt.parseFloat(f32, value);
+            if (!std.math.isFinite(result.camera_distance) or result.camera_distance < 10 or result.camera_distance > 100) return error.InvalidCameraDistance;
         } else if (std.mem.eql(u8, key, "--probe-loops")) {
             result.probe_loops = try std.fmt.parseInt(u32, value, 10);
         } else if (std.mem.eql(u8, key, "--capture")) {
@@ -86,6 +91,14 @@ test "CLI required options and malformed values" {
     try std.testing.expectError(error.InvalidDuration, parse(&.{ "watcher", "--replay", "r", "--sc2", "s", "--quit-after", "nan" }));
     const o = try parse(&.{ "watcher", "--replay", "r", "--sc2", "s", "--probe", "--disable-fog" });
     try std.testing.expect(o.probe and o.session.disable_fog);
+}
+
+test "CLI camera distance validates finite bounded values" {
+    const options = try parse(&.{ "watcher", "--replay", "r", "--sc2", "s", "--camera-distance", "60" });
+    try std.testing.expectEqual(@as(f32, 60), options.camera_distance);
+    for ([_][]const u8{ "nan", "inf", "0", "101" }) |value| {
+        try std.testing.expectError(error.InvalidCameraDistance, parse(&.{ "watcher", "--replay", "r", "--sc2", "s", "--camera-distance", value }));
+    }
 }
 
 test "CLI defaults to observer zero and validates explicit player IDs" {

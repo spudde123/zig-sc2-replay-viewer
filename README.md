@@ -61,7 +61,8 @@ SC2 cannot download maps automatically.
 | Space | Pause/resume |
 | Up / Down (also `]` / `[`) | Faster/slower: 0.25x–16x |
 | Right Arrow | Advance one simulation loop while paused |
-| WASD | Pan the camera |
+| Hold WASD | Smooth camera pan; combine keys for diagonals |
+| Mouse wheel / `+` / `-` | Zoom in/out (keypad `+` / `-` also work) |
 | Click minimap | Move the camera |
 | Escape / close window / Ctrl+C | Exit and clean up SC2 |
 
@@ -88,6 +89,10 @@ on padded/non-square minimaps; names use the HUD's ASCII bitmap font.
   visibility switch; use `--player 0` to see both players.
 - `--port PORT`: API port (default: 5000).
 - `--width N --height N`: SC2 render resolution (default: 640×480).
+- `--camera-distance N`: initial observer camera distance (default: 40, viewer
+  range: 10–100). Smaller values zoom in; larger values zoom out. Works in probe
+  mode too. Zoom remains available while paused, but not after the replay ends.
+  Distances 20, 40, and 80 were verified to change the RGB view on Linux SC2 4.10.
 - `--verbose-sc2`: show SC2's startup/rendering diagnostics.
 - `--help`: list all options.
 
