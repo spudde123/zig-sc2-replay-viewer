@@ -69,6 +69,29 @@ Changing perspective requires restarting the viewer. Seeking, automatic camera
 following, audio, and a full replay HUD are not implemented. Minimap navigation
 is approximate on padded/non-square minimaps.
 
+## GitHub builds and releases
+
+`.github/workflows/build.yml` builds and tests on pushes to `main`, and can also
+be run manually from **Actions → Build and release → Run workflow**.
+
+- Leave `release_tag` empty to produce a downloadable Actions artifact only.
+- Enter a new tag such as `v0.1.0` to publish a GitHub Release with the archive
+  and its SHA-256 checksum. The tag points to the selected workflow commit.
+- Select `prerelease` for preview releases. Existing tags/releases are not
+  overwritten; use a new version to publish another build.
+
+CI pins Zig 0.17.0 and Ubuntu 22.04, targeting baseline x86-64 and glibc 2.35.
+Archives contain the viewer, README, project license, and third-party license
+notices—not SC2 or replay data.
+Compatible OpenGL/X11 runtime libraries are still required. On Ubuntu, override
+SC2's Fedora-specific EGL default with
+`--egl /usr/lib/x86_64-linux-gnu/libEGL.so.1`.
+
+The zig-sc2 submodule commit must be pushed to its remote before publishing the
+parent repository; CI checks out that exact commit recursively. No custom
+release secret is needed: the release job uses GitHub's built-in token with
+`contents: write` permission.
+
 ## Tests and diagnostics
 
 ```sh
@@ -96,3 +119,11 @@ save SC2's main image, not the viewer's HUD or minimap layout.
   on the GUI thread.
 - `src/cli.zig`, `src/playback.zig`, `src/image.zig`: argument parsing, stepping
   and time formatting, and image conversion/ownership.
+
+## License
+
+The viewer's original code is [MIT licensed](LICENSE). Dependencies retain their
+own licenses: zig-sc2 ([MIT](lib/zig-sc2/LICENSE)), Sokol/sokol-zig
+([zlib](licenses/sokol.txt)), and Zig's standard library/runtime
+([MIT](licenses/zig.txt)). Release archives include these notices in `licenses/`
+alongside the project's `LICENSE`.

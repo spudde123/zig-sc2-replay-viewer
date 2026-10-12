@@ -1,0 +1,110 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "New release tag (e.g. v0.1.0); leave empty to build only"
+        type: string
+        required: false
+        default: ""
+      prerelease:
+        description: "Mark the release as a prerelease"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  PACKAGE: zig-sc2-replay-watcher-linux-x86_64
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxi-dev libxcursor-dev libgl1-mesa-dev libasound2-dev pkg-config
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+
+      - name: Check formatting
+        run: zig fmt --check build.zig build.zig.zon src
+
+      - name: Build and test
+        run: |
+          zig build -Doptimize=ReleaseSafe -Dcpu=baseline
+          zig build test -Doptimize=ReleaseSafe -Dcpu=baseline --summary all
+          ./zig-out/bin/zig_sc2_replay_watcher --help
+
+      - name: Package binary
+        run: |
+          mkdir -p "dist/$PACKAGE"
+          cp zig-out/bin/zig_sc2_replay_watcher README.md LICENSE "dist/$PACKAGE/"
+          cp -R licenses "dist/$PACKAGE/"
+          cp lib/zig-sc2/LICENSE "dist/$PACKAGE/licenses/zig-sc2.txt"
+          tar -C dist -czf "dist/$PACKAGE.tar.gz" "$PACKAGE"
+          (cd dist && sha256sum "$PACKAGE.tar.gz" > "$PACKAGE.tar.gz.sha256")
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.PACKAGE }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ inputs.release_tag }}
+      cancel-in-progress: false
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.PACKAGE }}
+          path: dist
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo '::error::Use a version tag such as v0.1.0 or v0.1.0-rc.1.'
+            exit 1
+          fi
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          # Creating the ref fails if the tag already exists, including concurrent attempts.
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA"
+          flags=()
+          if [[ "$PRERELEASE" == "true" ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" \
+            "dist/$PACKAGE.tar.gz" "dist/$PACKAGE.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$RELEASE_TAG" --generate-notes "${flags[@]}"

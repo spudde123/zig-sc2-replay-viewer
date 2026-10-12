@@ -18,6 +18,8 @@
         "src",
         "lib/zig-sc2",
         "README.md",
+        "LICENSE",
+        "licenses",
         ".gitmodules",
     },
 }
