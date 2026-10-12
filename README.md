@@ -53,6 +53,12 @@ not wall-clock time. Minutes continue past 59 for long replays. `1x` playback
 targets that same loop rate; actual speed depends on rendering performance.
 The final frame stays visible at replay end.
 
+The minimap shows player names anchored at their starting bases (or first owned
+unit if no base is available). These white labels identify ownership without
+assuming SC2's rendered color mapping, including in mirror matchups. Players
+whose starting units are not visible have no marker. Placement is approximate
+on padded/non-square minimaps; names use the HUD's ASCII bitmap font.
+
 ## Options
 
 - `--player ID`: perspective (default: `0`, all-player observer view). Other IDs

@@ -2,6 +2,7 @@ const std = @import("std");
 const sc2 = @import("zig-sc2");
 const images = @import("image.zig");
 const Playback = @import("playback.zig").Playback;
+const player_labels = @import("player_labels.zig");
 
 pub const Camera = struct { x: f32, y: f32 };
 pub const Worker = struct {
@@ -14,6 +15,7 @@ pub const Worker = struct {
     ready: bool = false,
     ended: bool = false,
     duration: u32 = 0,
+    labels: player_labels.Labels = .{},
     map_width: f32 = 256,
     map_height: f32 = 256,
     camera: Camera = .{ .x = 128, .y = 128 },
@@ -59,12 +61,14 @@ pub const Worker = struct {
         var session = try sc2.ReplaySession.open(permanent.allocator(), self.io, self.config, responses.allocator());
         defer session.close();
         var obs = try session.observe();
+        const labels = player_labels.capture(session.players[0..session.player_count], obs, session.map_width, session.map_height);
         const camera = initialCamera(obs, session.map_width, session.map_height);
         try session.client.moveObserverCamera(camera.x, camera.y);
         _ = responses.reset(.retain_capacity);
         obs = try session.observe();
         try self.publish(obs, session.client.status);
         self.lock();
+        self.labels = labels;
         self.duration = session.duration_loops;
         self.map_width = session.map_width;
         self.map_height = session.map_height;

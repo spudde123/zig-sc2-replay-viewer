@@ -43,6 +43,7 @@ const App = struct {
         const speed = self.worker.playback.speed();
         const paused = self.worker.playback.paused;
         const duration = self.worker.duration;
+        const labels = self.worker.labels;
         self.worker.unlock();
         if (interrupted.load(.acquire)) sokol.app.requestQuit();
         if (failure != null) {
@@ -54,6 +55,7 @@ const App = struct {
         }
         self.renderer.draw(self.current, .{
             .duration_loops = duration,
+            .labels = labels,
             .speed = speed,
             .state = if (ended) .ended else if (!ready) .loading else if (paused) .paused else .playing,
         });

@@ -54,6 +54,7 @@ const Texture = struct {
 
 pub const Hud = struct {
     duration_loops: u32 = 0,
+    labels: @import("player_labels.zig").Labels = .{},
     speed: f64 = 1,
     state: enum { loading, playing, paused, ended } = .loading,
 
@@ -140,6 +141,7 @@ pub const Renderer = struct {
         text.home();
         text.color3b(255, 255, 255);
         text.puts(label);
+        if (self.minimap_rect.width > 0) self.drawPlayerLabels(hud.labels, width, height);
         gfx.beginPass(.{
             .swapchain = sokol.glue.swapchain(),
             .action = .{ .colors = blk: {
@@ -152,6 +154,28 @@ pub const Renderer = struct {
         text.draw();
         gfx.endPass();
         gfx.commit();
+    }
+
+    fn drawPlayerLabels(self: *Renderer, labels: @import("player_labels.zig").Labels, width: f32, height: f32) void {
+        const rect = self.minimap_rect;
+        if (rect.width < 8 or rect.height < 8) return;
+        text.color3b(255, 255, 255);
+        for (labels.items[0..labels.count]) |label| {
+            const name = std.mem.sliceTo(&label.name, 0);
+            const cell: f32 = @min(8, (rect.width - 4) / @as(f32, @floatFromInt(@max(1, name.len))));
+            text.canvas(width * 8 / cell, height * 8 / cell);
+            const px = rect.x + label.x * rect.width;
+            const py = rect.y + (1 - label.y) * rect.height;
+            solidRect(.{ .x = px - 2, .y = py - 2, .width = 4, .height = 4 }, .{ 1, 1, 1 });
+            // Keep long labels and bases near the edge inside the minimap.
+            const label_width = @as(f32, @floatFromInt(name.len)) * cell;
+            const x = std.math.clamp(px - label_width / 2, rect.x, @max(rect.x, rect.x + rect.width - label_width));
+            const y = std.math.clamp(py + 5, rect.y, rect.y + rect.height - cell);
+            solidRect(.{ .x = x - 1, .y = y - 1, .width = label_width + 2, .height = cell + 2 }, .{ 0, 0, 0 });
+            text.origin(x / cell, y / cell);
+            text.home();
+            text.puts(&label.name);
+        }
     }
 
     fn solidRect(rect: Rect, color: [3]f32) void {
