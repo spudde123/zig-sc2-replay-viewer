@@ -36,7 +36,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libx11-dev libxi-dev libxcursor-dev libgl1-mesa-dev libasound2-dev pkg-config
+            libx11-dev libxi-dev libxcursor-dev libgl1-mesa-dev libasound2-dev libbz2-1.0 pkg-config
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2

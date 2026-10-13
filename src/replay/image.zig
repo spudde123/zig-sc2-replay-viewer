@@ -79,6 +79,7 @@ pub const Frame = struct {
     game_loop: u32,
     ended: bool,
     scene: @import("replay_data.zig").Scene = .{},
+    player_stats: @import("replay_data.zig").PlayerStats = .{},
 
     pub fn fromObservation(allocator: std.mem.Allocator, response: protocol.ResponseObservation, status: protocol.Status) !Frame {
         return fromObservationWithContext(allocator, response, status, .{});

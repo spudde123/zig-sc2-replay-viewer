@@ -93,6 +93,19 @@ pub const Scene = struct {
     }
 };
 
+pub const PlayerEconomy = struct {
+    game_loop: u32,
+    minerals: u32,
+    vespene: u32,
+    food_used: f32,
+    food_cap: f32,
+};
+
+pub const PlayerStats = struct {
+    available: bool = false,
+    items: [16]?PlayerEconomy = @splat(null),
+};
+
 pub const Players = struct {
     pub const Player = struct {
         id: u32 = 0,

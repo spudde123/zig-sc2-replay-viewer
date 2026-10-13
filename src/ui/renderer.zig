@@ -11,6 +11,7 @@ const chat_view = @import("chat_view.zig");
 const projection = @import("../camera/camera_projection.zig");
 const unit_overlay = @import("unit_overlay.zig");
 const production = @import("production_view.zig");
+const stats_view = @import("player_stats_view.zig");
 
 pub const Overlay = struct {
     players: *const data.Players,
@@ -81,6 +82,7 @@ pub const Renderer = struct {
     map_rect: Rect = .{},
     hud_rect: Rect = .{},
     info_rect: Rect = .{},
+    stats_rect: Rect = .{},
     production_rect: Rect = .{},
     production_button_rect: Rect = .{},
     chat_rect: Rect = .{},
@@ -164,6 +166,13 @@ pub const Renderer = struct {
             self.info_rect.width = self.production_rect.width;
             self.info_rect.height = self.production_rect.y + self.production_rect.height - self.info_rect.y;
         }
+        var stats_layout: stats_view.Layout = .{};
+        self.stats_rect = playerStatsRect(width, height, self.info_rect, self.minimap_rect, self.chat_rect);
+        if (self.stats_rect.width > 0) {
+            const stats_rows: usize = @intFromFloat(@floor((self.stats_rect.height - 26) / 14));
+            stats_layout = stats_view.build(overlay.players, if (frame) |f| f.player_stats else .{}, stats_rows);
+            self.stats_rect.height = 26 + @as(f32, @floatFromInt(stats_layout.count)) * 14;
+        }
         gl.defaults();
         gl.matrixModeProjection();
         gl.ortho(0, width, height, 0, -1, 1);
@@ -176,7 +185,7 @@ pub const Renderer = struct {
                 .image_height = @floatFromInt(f.map.height),
                 .window_width = width,
                 .window_height = height,
-                .obstacles = &.{ self.info_rect, self.minimap_rect, self.chat_rect, self.chat_button_rect },
+                .obstacles = &.{ self.info_rect, self.stats_rect, self.minimap_rect, self.chat_rect, self.chat_button_rect },
             });
             if (f.minimap) |m| {
                 self.minimap.upload(m);
@@ -193,6 +202,7 @@ pub const Renderer = struct {
         text.home();
         text.color3b(255, 255, 255);
         text.puts(label);
+        self.drawPlayerStats(&stats_layout, width, height);
         self.drawProduction(&production_layout, overlay.production_visible, width, height);
         if (self.minimap_rect.width > 0) self.drawPlayerLabels(hud.labels, width, height);
         if (overlay.chat_visible) self.drawChat(overlay, width, height);
@@ -212,8 +222,30 @@ pub const Renderer = struct {
     }
 
     pub fn blocksWorldClick(self: *const Renderer, x: f32, y: f32) bool {
-        return self.info_rect.contains(x, y) or self.chat_rect.contains(x, y) or
+        return self.info_rect.contains(x, y) or self.stats_rect.contains(x, y) or self.chat_rect.contains(x, y) or
             self.chat_button_rect.contains(x, y) or self.order_box_rect.contains(x, y);
+    }
+
+    fn drawPlayerStats(self: *Renderer, layout: *const stats_view.Layout, width: f32, height: f32) void {
+        const rect = self.stats_rect;
+        if (rect.width == 0) return;
+        solidRect(.{ .x = rect.x - 1, .y = rect.y - 1, .width = rect.width + 2, .height = rect.height + 2 }, .{ 0.2, 0.23, 0.28 });
+        solidRect(rect, .{ 0.04, 0.05, 0.07 });
+        text.font(1);
+        const title_cell = @min(10, (rect.width - 20) / 9);
+        text.canvas(width * 8 / title_cell, height * 8 / title_cell);
+        text.origin((rect.x + 10) / title_cell, (rect.y + 6) / title_cell);
+        text.home();
+        text.color3b(170, 200, 230);
+        text.puts("Resources");
+        const cell = @min(10, (rect.width - 20) / @as(f32, @floatFromInt(@max(1, layout.columns))));
+        text.canvas(width * 8 / cell, height * 8 / cell);
+        text.color3b(235, 235, 235);
+        for (layout.lines[0..layout.count], 0..) |*line, i| {
+            text.origin((rect.x + 10) / cell, (rect.y + 20 + @as(f32, @floatFromInt(i)) * 14) / cell);
+            text.home();
+            text.puts(std.mem.sliceTo(line, 0));
+        }
     }
 
     fn drawProduction(self: *Renderer, layout: *const production.Layout, visible: bool, width: f32, height: f32) void {
@@ -358,6 +390,38 @@ fn chatRect(width: f32, height: f32, minimap: Rect) Rect {
     if (panel_width < 160 or panel_height < 72) return .{};
     // Reserve the bottom row for the always-available visibility button.
     return .{ .x = width - panel_width - 12, .y = height - panel_height - 52, .width = panel_width, .height = panel_height };
+}
+
+fn playerStatsRect(width: f32, height: f32, info: Rect, minimap: Rect, chat: Rect) Rect {
+    // Independent top-right panel. Hide rather than overlap the left panel
+    // when the window is too narrow; reserve the bottom control-button row.
+    const panel_width = @min(420, width - (info.x + info.width) - 24);
+    const x = width - panel_width - 12;
+    var bottom = height - 52;
+    for ([_]Rect{ minimap, chat }) |other| {
+        if (other.width > 0 and other.x < x + panel_width and other.x + other.width > x)
+            bottom = @min(bottom, other.y - 12);
+    }
+    const space = @min(120, bottom - 12);
+    if (panel_width < 240 or space < 40) return .{};
+    return .{ .x = x, .y = 12, .width = panel_width, .height = space };
+}
+
+test "resource panel is top-right, avoids other UI and blocks world clicks" {
+    const info: Rect = .{ .x = 12, .y = 12, .width = 500, .height = 230 };
+    const mini: Rect = .{ .x = 12, .y = 528, .width = 180, .height = 180 };
+    const stats = playerStatsRect(960, 720, info, mini, .{});
+    try std.testing.expectEqual(@as(f32, 12), stats.y);
+    try std.testing.expectEqual(@as(f32, 948), stats.x + stats.width);
+    try std.testing.expect(stats.x >= info.x + info.width + 12);
+    const small = playerStatsRect(800, 240, info, .{}, .{ .x = 500, .y = 120, .width = 280, .height = 100 });
+    try std.testing.expect(small.y + small.height <= 108);
+    try std.testing.expectEqual(@as(f32, 0), playerStatsRect(640, 720, info, .{}, .{}).width);
+    try std.testing.expectEqual(@as(f32, 0), playerStatsRect(960, 100, info, .{}, .{}).width);
+    var renderer: Renderer = .{ .info_rect = info, .stats_rect = stats };
+    try std.testing.expect(renderer.blocksWorldClick(100, 100));
+    try std.testing.expect(renderer.blocksWorldClick(stats.x + 20, stats.y + 20));
+    try std.testing.expect(!renderer.blocksWorldClick(520, 100));
 }
 
 /// Maximum production area; drawing shrinks it to the number of visible rows.

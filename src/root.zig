@@ -19,6 +19,8 @@ test {
     _ = @import("camera/camera_projection.zig");
     _ = @import("ui/order_view.zig");
     _ = @import("replay/production_catalog.zig");
+    _ = @import("replay/player_stats.zig");
+    _ = @import("ui/player_stats_view.zig");
     _ = @import("ui/production_view.zig");
     _ = @import("ui/unit_overlay.zig");
 }

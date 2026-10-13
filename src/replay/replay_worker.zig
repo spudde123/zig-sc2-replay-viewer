@@ -28,6 +28,7 @@ pub const Worker = struct {
     // Worker-only metadata; never borrowed by the GUI. Owned by runInner.
     terrain: ?observation_data.Terrain = null,
     production_catalog: ?@import("production_catalog.zig").Catalog = null,
+    stats_timeline: ?@import("player_stats.zig").Timeline = null,
     players: data.Players = .{},
     failure: ?anyerror = null,
     ready: bool = false,
@@ -103,6 +104,17 @@ pub const Worker = struct {
     }
 
     fn runInner(self: *Worker) !void {
+        self.stats_timeline = @import("player_stats.zig").load(self.allocator, self.io, self.config.replay) catch |err| blk: {
+            if (err == error.Canceled) return error.Canceled;
+            if (err == error.Bzip2LibraryUnavailable) {
+                std.log.warn("Player statistics unavailable: install the libbz2 runtime library (bzip2-libs / libbz2-1.0). Playback continues.", .{});
+            } else std.log.warn("Player statistics unavailable: {s}; playback continues.", .{@errorName(err)});
+            break :blk null;
+        };
+        defer {
+            if (self.stats_timeline) |timeline| timeline.deinit(self.allocator);
+            self.stats_timeline = null;
+        }
         var permanent = std.heap.ArenaAllocator.init(self.allocator);
         defer permanent.deinit();
         var responses = std.heap.ArenaAllocator.init(self.allocator);
@@ -192,11 +204,12 @@ pub const Worker = struct {
     }
 
     fn publish(self: *Worker, obs: sc2.sc2p.ResponseObservation, status: sc2.sc2p.Status, camera: Camera) !void {
-        const frame = try images.Frame.fromObservationWithContext(self.allocator, obs, status, .{
+        var frame = try images.Frame.fromObservationWithContext(self.allocator, obs, status, .{
             .camera = .{ .x = camera.x, .y = camera.y, .distance = camera.distance },
             .terrain = if (self.terrain) |*terrain| terrain else null,
             .production_catalog = if (self.production_catalog) |*catalog| catalog else null,
         });
+        if (self.stats_timeline) |timeline| frame.player_stats = timeline.at(frame.game_loop);
         self.lock();
         const old = self.pending;
         appendChat(&self.pending_chat, obs);

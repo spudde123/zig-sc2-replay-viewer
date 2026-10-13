@@ -36,11 +36,16 @@ these viewer graphics libraries and Mesa's EGL implementation if missing:
 
 ```sh
 # Ubuntu / Debian
-sudo apt install libx11-6 libxi6 libxcursor1 libgl1 libegl1 libegl-mesa0
+sudo apt install libx11-6 libxi6 libxcursor1 libgl1 libegl1 libegl-mesa0 libbz2-1.0
 
 # Fedora
-sudo dnf install libX11 libXi libXcursor mesa-libGL mesa-libEGL
+sudo dnf install libX11 libXi libXcursor mesa-libGL mesa-libEGL bzip2-libs
 ```
+
+The player-stat reader dynamically loads the system `libbz2` runtime to decompress
+replay tracker data. No bzip2 development headers, external command or Python
+are required. On Arch, install `bzip2`. Without a usable library, statistics are
+marked unavailable and replay playback continues normally.
 
 A working graphics driver and X11/XWayland session are also required. Systems
 using proprietary drivers may need their vendor's EGL implementation instead
@@ -142,6 +147,28 @@ bounded to 512 bytes, and is not lost when newer images replace pending frames.
 The existing bitmap renderer replaces unsupported Unicode characters with `?`.
 There is no scrollback control yet. Very small windows hide the panel rather than
 covering the minimap.
+
+## Player resources
+
+A separate top-right panel shows sampled minerals (`M`), vespene (`V`), and
+supply used/cap for each player, independently of observer `PlayerCommon` data.
+It hides when there is too little space to avoid overlapping the other panels.
+A small native parser reads only `SPlayerStatsEvent` from the replay's tracker
+stream, targeting base build **75689** and its MPQ v3 single-unit files.
+Only uncompressed or bzip2-compressed tracker data is supported.
+
+Samples normally occur every 160 loops (about 7.14 seconds at Faster speed).
+The viewer uses the latest sample at or before the displayed image's loop.
+Values can therefore lag gameplay by roughly seven seconds between samples;
+no sample age is displayed. These are **recorded samples, not live estimates or
+interpolated balances**. Fractional supply is preserved, and recorded food-made is clamped
+to the standard melee cap of 200. Before the first sample, values are pending.
+Missing tracker data, other builds/formats, or missing `libbz2` disable stats
+without preventing replay playback.
+
+Resources remain visible when production is collapsed with **P**. Pausing
+freezes the displayed values. Parsing happens once on the worker; each published frame
+owns its selected values, with no GUI references into parser storage.
 
 ## Production and research
 
@@ -276,7 +303,7 @@ Entry points (`main.zig`, `root.zig`) and CLI parsing remain at the `src/` root.
 Files are grouped by responsibility:
 
 - `src/replay/`: SC2 I/O, playback timing, owned observations/images, player
-  metadata and the production ability catalog.
+  metadata, the production ability catalog and the narrow replay-stat reader.
 - `src/input/`: keybindings, held-key camera panning and minimap drag state.
 - `src/camera/`: world/image projection and minimap coordinate transforms.
 - `src/ui/`: presentation-only formatting/layout and Sokol rendering.
@@ -294,6 +321,9 @@ Files are grouped by responsibility:
   and attaches the camera command matching the image.
 - `src/camera/camera_projection.zig`: empirical 3D projection, exact letterboxing,
   screen-space picking and line clipping.
+- `src/replay/player_stats.zig`: extracts the build-75689 stat timeline from MPQ;
+  uses dynamically loaded native libbz2 and skips unrelated tracker events.
+- `src/ui/player_stats_view.zig`: bounded player-resource formatting.
 - `src/ui/chat_view.zig`, `src/ui/order_view.zig`, `src/ui/production_view.zig`:
   bounded presentation-only formatting and production grouping/layout.
 - `src/ui/unit_overlay.zig`: GUI-thread selection footprint, arrows and order box.
@@ -309,4 +339,6 @@ The viewer's original code is [MIT licensed](LICENSE). Dependencies retain their
 own licenses: zig-sc2 ([MIT](lib/zig-sc2/LICENSE)), Sokol/sokol-zig
 ([zlib](licenses/sokol.txt)), and Zig's standard library/runtime
 ([MIT](licenses/zig.txt)). Release archives include these notices in `licenses/`
-alongside the project's `LICENSE`.
+alongside the project's `LICENSE`. Replay-format/algorithm references are
+mpyq (BSD-2-Clause) and Blizzard s2protocol (MIT); their notices are included as
+`licenses/mpyq.txt` and `licenses/s2protocol.txt`.
