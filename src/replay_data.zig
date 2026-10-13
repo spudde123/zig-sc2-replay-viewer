@@ -1,7 +1,77 @@
 //! Value-owned data crossing the game/GUI boundary. No protocol or renderer types.
-//! Chat is an event stream (FIFO); future unit data belongs in the replaceable,
-//! frame-aligned observation snapshot, not this event queue.
+//! Chat is an event stream (FIFO); Scene is replaceable state attached to the
+//! matching image frame. All slices in a Scene are owned, never response pointers.
 const std = @import("std");
+
+pub const Vec3 = struct { x: f32 = 0, y: f32 = 0, z: f32 = 0 };
+
+pub const CameraPose = struct {
+    // Observer command target, with terrain elevation (not camera eye position).
+    target: Vec3,
+    distance: f32,
+};
+
+pub const Unit = struct {
+    tag: u64,
+    type_id: u32,
+    name: [49:0]u8 = @splat(0),
+    owner: i32,
+    position: Vec3,
+    radius: f32,
+    visible: bool,
+    flying: bool,
+    order_start: usize,
+    order_count: usize,
+};
+
+pub const Order = struct {
+    pub const Target = union(enum) {
+        none,
+        position: struct { x: f32, y: f32, z: ?f32 },
+        unit: u64,
+    };
+    ability_id: u32,
+    name: [49:0]u8 = @splat(0),
+    progress: f32,
+    target: Target,
+};
+
+pub const Scene = struct {
+    camera: ?CameraPose = null,
+    // Retained for diagnostics, not assumed to be the observer RGB camera.
+    reported_camera: ?Vec3 = null,
+    units: []Unit = &.{},
+    orders: []Order = &.{},
+
+    pub fn deinit(self: Scene, allocator: std.mem.Allocator) void {
+        allocator.free(self.units);
+        allocator.free(self.orders);
+    }
+
+    pub fn find(self: *const Scene, tag: u64) ?*const Unit {
+        var lo: usize = 0;
+        var hi = self.units.len;
+        while (lo < hi) {
+            const middle = lo + (hi - lo) / 2;
+            const unit = &self.units[middle];
+            if (unit.tag == tag) return unit;
+            if (unit.tag < tag) lo = middle + 1 else hi = middle;
+        }
+        return null;
+    }
+
+    pub fn ordersFor(self: *const Scene, unit: *const Unit) []const Order {
+        return self.orders[unit.order_start .. unit.order_start + unit.order_count];
+    }
+
+    pub fn targetPosition(self: *const Scene, order: Order) ?Vec3 {
+        return switch (order.target) {
+            .none => null,
+            .position => |p| if (p.z) |z| .{ .x = p.x, .y = p.y, .z = z } else null,
+            .unit => |tag| if (self.find(tag)) |unit| (if (unit.visible) unit.position else null) else null,
+        };
+    }
+};
 
 pub const Players = struct {
     pub const Player = struct {

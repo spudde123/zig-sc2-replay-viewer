@@ -1,10 +1,11 @@
 const std = @import("std");
 const sc2 = @import("zig-sc2");
+const Mapping = @import("minimap_mapping.zig").Mapping;
 
 pub const Label = struct {
     id: u32 = 0,
     name: [48:0]u8 = @splat(0),
-    // Normalized map coordinates; y increases upwards.
+    // Normalized square minimap coordinates (including padding); y increases upwards.
     x: f32 = 0,
     y: f32 = 0,
 };
@@ -16,9 +17,9 @@ pub const Labels = struct {
 
 /// Capture once, so names remain anchored at the starting bases throughout playback.
 /// No marker is invented for players whose starting units are unavailable.
-pub fn capture(players: []const sc2.ReplaySession.Player, obs: sc2.sc2p.ResponseObservation, width: f32, height: f32) Labels {
+pub fn capture(players: []const sc2.ReplaySession.Player, obs: sc2.sc2p.ResponseObservation, mapping: Mapping) Labels {
     var result: Labels = .{};
-    if (width <= 0 or height <= 0) return result;
+    if (mapping.width <= 0 or mapping.height <= 0) return result;
     const observation = obs.observation orelse return result;
     const raw = observation.raw orelse return result;
     for (players) |player| {
@@ -36,7 +37,8 @@ pub fn capture(players: []const sc2.ReplaySession.Player, obs: sc2.sc2p.Response
             }
         }
         const pos = position orelse continue;
-        var label: Label = .{ .id = player.id, .x = std.math.clamp(pos.x / width, 0, 1), .y = std.math.clamp(pos.y / height, 0, 1) };
+        const point = mapping.toImage(.{ .x = pos.x, .y = pos.y });
+        var label: Label = .{ .id = player.id, .x = point.x, .y = point.y };
         setName(&label, std.mem.sliceTo(&player.name, 0));
         result.items[result.count] = label;
         result.count += 1;
@@ -85,11 +87,11 @@ test "labels use ownership, prefer bases, omit unseen players and own names" {
         .{ .owner = 1, .unit_type = .CommandCenter, .position = .{ .x = 20, .y = 40 } },
         .{ .owner = 2, .unit_type = .CommandCenter, .position = .{ .x = 80, .y = 160 } },
     };
-    const labels = capture(&players, .{ .observation = .{ .raw = .{ .units = &units } } }, 100, 200);
+    const labels = capture(&players, .{ .observation = .{ .raw = .{ .units = &units } } }, .{ .width = 100, .height = 200 });
     players[0].name[0] = 'X';
     try std.testing.expectEqual(@as(usize, 2), labels.count);
     try std.testing.expectEqualStrings("Maru", std.mem.sliceTo(&labels.items[0].name, 0));
-    try std.testing.expectApproxEqAbs(@as(f32, 0.2), labels.items[0].x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.35), labels.items[0].x, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.8), labels.items[1].y, 0.001);
-    try std.testing.expectEqual(@as(usize, 0), capture(&players, .{}, 100, 200).count);
+    try std.testing.expectEqual(@as(usize, 0), capture(&players, .{}, .{ .width = 100, .height = 200 }).count);
 }

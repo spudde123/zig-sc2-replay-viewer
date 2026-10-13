@@ -8,23 +8,18 @@ const Image = @import("image.zig").Image;
 const Frame = @import("image.zig").Frame;
 const data = @import("replay_data.zig");
 const chat_view = @import("chat_view.zig");
+const projection = @import("camera_projection.zig");
+const unit_overlay = @import("unit_overlay.zig");
 
 pub const Overlay = struct {
     players: *const data.Players,
     chat: *const data.ChatQueue,
     chat_visible: bool = true,
+    selected_tag: ?u64 = null,
+    projection_markers: bool = false,
 };
 
-pub const Rect = struct {
-    x: f32 = 0,
-    y: f32 = 0,
-    width: f32 = 0,
-    height: f32 = 0,
-
-    pub fn contains(self: Rect, x: f32, y: f32) bool {
-        return self.width > 0 and self.height > 0 and x >= self.x and y >= self.y and x < self.x + self.width and y < self.y + self.height;
-    }
-};
+pub const Rect = projection.Rect;
 
 const Texture = struct {
     image: gfx.Image = .{},
@@ -81,6 +76,10 @@ pub const Renderer = struct {
     sampler: gfx.Sampler = .{},
     minimap_rect: Rect = .{},
     chat_button_rect: Rect = .{},
+    map_rect: Rect = .{},
+    hud_rect: Rect = .{},
+    chat_rect: Rect = .{},
+    order_box_rect: Rect = .{},
 
     pub fn init() Renderer {
         gfx.setup(.{ .environment = sokol.glue.environment(), .logger = .{ .func = sokol.log.func } });
@@ -116,24 +115,6 @@ pub const Renderer = struct {
     pub fn draw(self: *Renderer, frame: ?Frame, hud: Hud, overlay: Overlay) void {
         const width: f32 = @floatFromInt(sokol.app.width());
         const height: f32 = @floatFromInt(sokol.app.height());
-        gl.defaults();
-        gl.matrixModeProjection();
-        gl.ortho(0, width, height, 0, -1, 1);
-        self.minimap_rect = .{};
-        if (frame) |f| {
-            self.map.upload(f.map);
-            const scale = @min(width / @as(f32, @floatFromInt(f.map.width)), height / @as(f32, @floatFromInt(f.map.height)));
-            const w = @as(f32, @floatFromInt(f.map.width)) * scale;
-            const h = @as(f32, @floatFromInt(f.map.height)) * scale;
-            self.quad(self.map.view, .{ .x = (width - w) / 2, .y = (height - h) / 2, .width = w, .height = h });
-            if (f.minimap) |m| {
-                self.minimap.upload(m);
-                const side = @min(180, @min(width, height) * 0.28);
-                self.minimap_rect = .{ .x = 12, .y = height - side - 12, .width = side, .height = side };
-                solidRect(.{ .x = self.minimap_rect.x - 2, .y = self.minimap_rect.y - 2, .width = side + 4, .height = side + 4 }, .{ 0.2, 0.23, 0.28 });
-                self.quad(self.minimap.view, self.minimap_rect);
-            }
-        }
         var hud_buffer: [512]u8 = undefined;
         const label = hud.format(&hud_buffer, if (frame) |f| f.game_loop else 0) catch unreachable;
         var columns: usize = 0;
@@ -147,7 +128,41 @@ pub const Renderer = struct {
         const cell_size = @min(16, @max(1, width - 40) / @as(f32, @floatFromInt(columns)));
         const hud_right = 12 + @as(f32, @floatFromInt(columns)) * cell_size + 16;
         const hud_bottom = 12 + @as(f32, @floatFromInt(lines)) * cell_size + 16;
-        solidRect(.{ .x = 12, .y = 12, .width = hud_right - 12, .height = hud_bottom - 12 }, .{ 0, 0, 0 });
+        self.hud_rect = .{ .x = 12, .y = 12, .width = hud_right - 12, .height = hud_bottom - 12 };
+        self.minimap_rect = .{};
+        self.map_rect = .{};
+        self.order_box_rect = .{};
+        if (frame) |f| {
+            self.map_rect = Rect.fit(@floatFromInt(f.map.width), @floatFromInt(f.map.height), width, height);
+            if (f.minimap != null) {
+                const side = @min(180, @min(width, height) * 0.28);
+                self.minimap_rect = .{ .x = 12, .y = height - side - 12, .width = side, .height = side };
+            }
+        }
+        self.chat_rect = if (overlay.chat_visible) chatRect(width, height, self.minimap_rect) else .{};
+        self.chat_button_rect = chatButtonRect(width, height);
+        gl.defaults();
+        gl.matrixModeProjection();
+        gl.ortho(0, width, height, 0, -1, 1);
+        if (frame) |f| {
+            self.map.upload(f.map);
+            self.quad(self.map.view, self.map_rect);
+            self.order_box_rect = unit_overlay.draw(&f.scene, overlay.selected_tag, overlay.projection_markers, .{
+                .viewport = self.map_rect,
+                .image_width = @floatFromInt(f.map.width),
+                .image_height = @floatFromInt(f.map.height),
+                .window_width = width,
+                .window_height = height,
+                .obstacles = &.{ self.hud_rect, self.minimap_rect, self.chat_rect, self.chat_button_rect },
+            });
+            if (f.minimap) |m| {
+                self.minimap.upload(m);
+                const rect = self.minimap_rect;
+                solidRect(.{ .x = rect.x - 2, .y = rect.y - 2, .width = rect.width + 4, .height = rect.height + 4 }, .{ 0.2, 0.23, 0.28 });
+                self.quad(self.minimap.view, rect);
+            }
+        }
+        solidRect(self.hud_rect, .{ 0, 0, 0 });
         text.font(0);
         text.canvas(width * 8 / cell_size, height * 8 / cell_size);
         text.origin(20 / cell_size, 20 / cell_size);
@@ -169,6 +184,11 @@ pub const Renderer = struct {
         text.draw();
         gfx.endPass();
         gfx.commit();
+    }
+
+    pub fn blocksWorldClick(self: *const Renderer, x: f32, y: f32) bool {
+        return self.hud_rect.contains(x, y) or self.chat_rect.contains(x, y) or
+            self.chat_button_rect.contains(x, y) or self.order_box_rect.contains(x, y);
     }
 
     fn drawPlayerLabels(self: *Renderer, labels: @import("player_labels.zig").Labels, width: f32, height: f32) void {

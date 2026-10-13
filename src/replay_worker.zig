@@ -4,6 +4,8 @@ const images = @import("image.zig");
 const Playback = @import("playback.zig").Playback;
 const player_labels = @import("player_labels.zig");
 const data = @import("replay_data.zig");
+const observation_data = @import("observation_data.zig");
+const minimap_mapping = @import("minimap_mapping.zig");
 
 pub const Camera = struct {
     x: f32,
@@ -23,6 +25,8 @@ pub const Worker = struct {
     mutex: std.Io.Mutex = .init,
     pending: ?images.Frame = null,
     pending_chat: data.ChatQueue = .{},
+    // Worker-only metadata; never borrowed by the GUI. Owned by runInner.
+    terrain: ?observation_data.Terrain = null,
     players: data.Players = .{},
     failure: ?anyerror = null,
     ready: bool = false,
@@ -31,6 +35,7 @@ pub const Worker = struct {
     labels: player_labels.Labels = .{},
     map_width: f32 = 256,
     map_height: f32 = 256,
+    minimap_mapping: minimap_mapping.Mapping = .{},
     camera: Camera = .{ .x = 128, .y = 128 },
     requested_camera: ?Camera = null,
     playback: Playback = .{},
@@ -61,6 +66,14 @@ pub const Worker = struct {
         camera.x = std.math.clamp(x, 0, self.map_width);
         camera.y = std.math.clamp(y, 0, self.map_height);
         self.requested_camera = camera;
+    }
+
+    /// Normalized square RGB minimap coordinates, including letterboxing.
+    /// Called by the GUI while holding the mutex.
+    pub fn requestMinimapPosition(self: *Worker, x: f32, y: f32) void {
+        if (!std.math.isFinite(x) or !std.math.isFinite(y)) return;
+        const point = self.minimap_mapping.toWorld(.{ .x = x, .y = y });
+        self.requestPosition(point.x, point.y);
     }
 
     /// Atomically take the latest image and all queued events. Image replacement
@@ -95,6 +108,15 @@ pub const Worker = struct {
         defer responses.deinit();
         var session = try sc2.ReplaySession.open(permanent.allocator(), self.io, self.config, responses.allocator());
         defer session.close();
+        const game_info = try session.client.getGameInfo();
+        const mapping = minimap_mapping.Mapping.fromPlayable(if (game_info.start_raw) |raw| raw.playable_area else null, session.map_width, session.map_height);
+        if (game_info.start_raw) |raw| {
+            if (raw.terrain_height) |height| self.terrain = try observation_data.Terrain.copy(self.allocator, height);
+        }
+        defer {
+            if (self.terrain) |terrain| terrain.deinit(self.allocator);
+            self.terrain = null;
+        }
         var players: data.Players = .{};
         for (session.players[0..session.player_count]) |player| {
             players.add(player.id, std.mem.sliceTo(&player.name, 0));
@@ -108,18 +130,19 @@ pub const Worker = struct {
         self.lock();
         appendChat(&self.pending_chat, obs);
         self.unlock();
-        const labels = player_labels.capture(session.players[0..session.player_count], obs, session.map_width, session.map_height);
+        const labels = player_labels.capture(session.players[0..session.player_count], obs, mapping);
         var camera = initialCamera(obs, session.map_width, session.map_height);
         camera.distance = self.initial_distance;
         try session.client.setObserverCamera(camera.x, camera.y, camera.distance);
         _ = responses.reset(.retain_capacity);
         obs = try session.observe();
-        try self.publish(obs, session.client.status);
+        try self.publish(obs, session.client.status, camera);
         self.lock();
         self.labels = labels;
         self.duration = session.duration_loops;
         self.map_width = session.map_width;
         self.map_height = session.map_height;
+        self.minimap_mapping = mapping;
         self.camera = camera;
         self.ready = true;
         self.unlock();
@@ -151,18 +174,22 @@ pub const Worker = struct {
             const count = if (ended) 0 else if (step_once) 1 else scheduler.due(elapsed);
             if (move) |position| {
                 try session.client.setObserverCamera(position.x, position.y, position.distance);
+                camera = position;
             }
             if (count > 0) try session.advance(count);
             if (count > 0 or move != null) {
                 obs = try session.observe();
-                try self.publish(obs, session.client.status);
+                try self.publish(obs, session.client.status, camera);
                 _ = responses.reset(.retain_capacity);
             } else try std.Io.sleep(self.io, .fromMilliseconds(5), .awake);
         }
     }
 
-    fn publish(self: *Worker, obs: sc2.sc2p.ResponseObservation, status: sc2.sc2p.Status) !void {
-        const frame = try images.Frame.fromObservation(self.allocator, obs, status);
+    fn publish(self: *Worker, obs: sc2.sc2p.ResponseObservation, status: sc2.sc2p.Status, camera: Camera) !void {
+        const frame = try images.Frame.fromObservationWithContext(self.allocator, obs, status, .{
+            .camera = .{ .x = camera.x, .y = camera.y, .distance = camera.distance },
+            .terrain = if (self.terrain) |*terrain| terrain else null,
+        });
         self.lock();
         const old = self.pending;
         appendChat(&self.pending_chat, obs);
@@ -217,19 +244,28 @@ test "replacing image frames does not replace queued chat" {
     var worker: Worker = .{ .io = std.testing.io, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" } };
     defer worker.deinit();
     var history: data.ChatQueue = .{};
+    var heights: [4]u8 = @splat(223);
+    worker.terrain = .{ .width = 2, .height = 2, .bytes = &heights };
+    const submitted: Camera = .{ .x = 0.5, .y = 0.5, .distance = 40 };
+    var units = [_]sc2.sc2p.Unit{.{ .tag = 1, .position = .{ .x = 0.4, .y = 0.4 }, .z = 12 }};
     var pixels = [_]u8{ 10, 20, 30 };
     var messages = [_]sc2.sc2p.ChatReceived{.{ .player_id = 1, .message = "first" }};
     var obs: sc2.sc2p.ResponseObservation = .{
-        .observation = .{ .game_loop = 1, .render = .{ .map = .{ .bits_per_pixel = 24, .size = .{ .x = 1, .y = 1 }, .image = &pixels } } },
+        .observation = .{ .game_loop = 1, .raw = .{ .units = &units }, .render = .{ .map = .{ .bits_per_pixel = 24, .size = .{ .x = 1, .y = 1 }, .image = &pixels } } },
         .chat = &messages,
     };
-    try worker.publish(obs, .in_replay);
+    try worker.publish(obs, .in_replay, submitted);
     messages[0].message = "second";
     obs.observation.?.game_loop = 2;
-    try worker.publish(obs, .in_replay);
+    units[0].position.x = 0.9;
+    worker.camera.distance = 80; // GUI-facing command state can be ahead of RGB.
+    try worker.publish(obs, .in_replay, submitted);
+    units[0].position.x = 1.8; // Response arena may immediately be reused.
     const frame = worker.takeFrameAndChat(&history).?;
     defer frame.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(u32, 2), frame.game_loop);
+    try std.testing.expectEqual(@as(f32, 40), frame.scene.camera.?.distance);
+    try std.testing.expectEqual(@as(f32, 0.9), frame.scene.find(1).?.position.x);
     try std.testing.expectEqual(@as(usize, 2), history.count);
     try std.testing.expectEqualStrings("first", history.at(0).text());
     try std.testing.expectEqualStrings("second", history.at(1).text());
@@ -249,6 +285,26 @@ test "minimap positioning preserves current and pending zoom before scrolling" {
     try std.testing.expectEqual(@as(f32, 76), worker.requested_camera.?.distance);
     try std.testing.expectEqual(@as(f32, 50), worker.requested_camera.?.x);
     try std.testing.expectEqual(@as(f32, 60), worker.requested_camera.?.y);
+}
+
+test "minimap base clicks use playable bounds and preserve pending zoom" {
+    var worker: Worker = .{ .io = undefined, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" } };
+    worker.ready = true;
+    worker.map_width = 160;
+    worker.map_height = 208;
+    worker.minimap_mapping = minimap_mapping.Mapping.fromPlayable(.{ .p0 = .{ .x = 14, .y = 32 }, .p1 = .{ .x = 142, .y = 176 } }, 160, 208);
+    worker.camera.distance = 80;
+    worker.requestZoom(1);
+    worker.requestMinimapPosition(105.33333 / 128.0, 1 - 14.66667 / 128.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 124.5), worker.requested_camera.?.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 159.5), worker.requested_camera.?.y, 0.001);
+    try std.testing.expectEqual(@as(f32, 76), worker.requested_camera.?.distance);
+    const pending = worker.requested_camera;
+    worker.requestMinimapPosition(std.math.nan(f32), 0.5);
+    try std.testing.expectEqual(pending, worker.requested_camera);
+    worker.ended = true;
+    worker.requestMinimapPosition(0.5, 0.5);
+    try std.testing.expectEqual(pending, worker.requested_camera);
 }
 
 test "zoom requests coalesce, preserve position, clamp and stop at replay end" {

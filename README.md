@@ -65,6 +65,8 @@ SC2 cannot download maps automatically.
 | Hold WASD | Smooth camera pan; combine keys for diagonals |
 | Mouse wheel / `+` / `-` | Zoom in/out (keypad `+` / `-` also work) |
 | Click / hold and drag minimap | Move the camera; zoom is preserved |
+| Click a unit in the game image | Select it and show orders / target arrows |
+| Right-click / click empty game space | Clear unit selection |
 | Escape / close window / Ctrl+C | Exit and clean up SC2 |
 
 ### Custom keybinds
@@ -116,8 +118,9 @@ The final frame stays visible at replay end.
 The minimap shows player names anchored at their starting bases (or first owned
 unit if no base is available). These white labels identify ownership without
 assuming SC2's rendered color mapping, including in mirror matchups. Players
-whose starting units are not visible have no marker. Placement is approximate
-on padded/non-square minimaps; names use the HUD's ASCII bitmap font.
+whose starting units are not visible have no marker. Labels and navigation use
+the playable-area crop and aspect-ratio padding of SC2's square minimap; names
+use the HUD's ASCII bitmap font.
 
 ## Chat
 
@@ -139,6 +142,36 @@ The existing bitmap renderer replaces unsupported Unicode characters with `?`.
 There is no scrollback control yet. Very small windows hide the panel rather than
 covering the minimap.
 
+## Unit orders (experimental)
+
+Click a visible unit to highlight its projected footprint and show a text box
+with its unit type, tag, owner and first reported order. Only that order's target
+is drawn, using a yellow arrow. Additional orders are retained in the snapshot
+but shown only as a count, not extra text or arrows. Training/targetless orders show text and
+progress but no arrow. Missing or hidden targets are marked unavailable rather
+than drawing toward stale positions. “No orders reported” does not prove the
+unit is idle; the API may omit orders for a perspective.
+
+Selection follows the unit tag across frames, pan and zoom. Right-click or click
+empty game space to clear it; losing the unit/vision also clears selection.
+Selection works while paused and at replay end, and never sends game commands.
+HUD/chat/minimap controls take priority over game-image picking. The order box
+tries to stay near its unit without covering UI panels; it hides on cramped
+windows or when its unit is offscreen.
+
+Projection is an empirical Linux SC2 4.10 observer camera model, calibrated with
+flat-ground image correspondences at several zoom/pan settings. It uses 3D unit
+positions and terrain height, then the exact displayed image rectangle. Picking
+uses approximate footprints, not mesh silhouettes. Map-edge camera clamping,
+ramps, flying/model offsets and nonzero perspectives need further validation;
+there is no depth buffer for hiding arrows behind game geometry. Use
+`--projection-markers` to display cyan raw-position anchors for checking alignment.
+See [camera measurements and limitations](docs/camera-projection.md).
+
+Images, camera commands, units and orders cross the worker/GUI boundary as one
+owned snapshot; chat remains an independent event FIFO. Projection never reads
+the worker's ahead-of-image camera request state.
+
 ## Options
 
 - `--player ID`: perspective (default: `0`, all-player observer view). Other IDs
@@ -153,12 +186,14 @@ covering the minimap.
   range: 10–100). Smaller values zoom in; larger values zoom out. Works in probe
   mode too. Zoom remains available while paused, but not after the replay ends.
   Distances 20, 40, and 80 were verified to change the RGB view on Linux SC2 4.10.
+- `--projection-markers`: draw projected raw unit anchors for camera validation
+  (off by default, up to 4096 onscreen markers).
 - `--verbose-sc2`: show SC2's startup/rendering diagnostics.
 - `--help`: list all options.
 
 Changing perspective requires restarting the viewer. Seeking, automatic camera
-following, audio, and a full replay HUD are not implemented. Minimap navigation
-is approximate on padded/non-square minimaps.
+following, audio, and a full replay HUD are not implemented. SC2 can silently
+clamp camera requests near map edges; local projection there remains experimental.
 
 ## GitHub builds and releases
 
@@ -197,7 +232,7 @@ zig build run -- \
 ```
 
 `--quit-after SECONDS` automatically exits the GUI for smoke testing. Captures
-save SC2's main image, not the viewer's HUD, chat, or minimap layout.
+save SC2's main image, not the viewer's HUD, chat, unit overlays, or minimap layout.
 
 ## Structure
 
@@ -207,13 +242,18 @@ save SC2's main image, not the viewer's HUD, chat, or minimap layout.
 - `src/replay_worker.zig`: owns SC2 I/O, playback timing, a latest-frame mailbox,
   and a separate FIFO chat queue. Chat is collected from every observation,
   including initialization and camera-only observations.
-- `src/replay_data.zig`: value-owned player metadata, chat messages, and bounded
-  event queues, independent of protocol and rendering types. Future unit data
-  should travel with its matching observation/frame snapshot, not the chat FIFO.
-- `src/chat_view.zig`: presentation-only chat formatting and wrapping.
-- `src/renderer.zig`: owns Sokol textures, the minimap, playback HUD, and chat
-  panel on the GUI thread. The GUI owns recent chat history; it does not retain
-  SC2 response pointers. No unit-data display is implemented yet.
+- `src/replay_data.zig`: value-owned player/chat data and frame-aligned unit/order
+  scenes, independent of protocol and rendering types. Scenes use sorted units
+  and flattened order arrays; chat uses bounded event queues.
+- `src/observation_data.zig`: copies borrowed raw observations, samples terrain,
+  and attaches the camera command matching the image.
+- `src/camera_projection.zig`: empirical 3D projection, exact letterboxing,
+  screen-space picking and line clipping.
+- `src/chat_view.zig`, `src/order_view.zig`: bounded presentation-only formatting.
+- `src/unit_overlay.zig`: GUI-thread selection footprint, arrows and order box.
+- `src/renderer.zig`: owns Sokol textures and composes the world image/overlays,
+  minimap, playback HUD and chat. GUI state holds the selected tag and recent
+  chat history; it never retains SC2 response pointers.
 - `src/cli.zig`, `src/playback.zig`, `src/image.zig`: argument parsing, stepping
   and time formatting, and image conversion/ownership.
 

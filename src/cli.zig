@@ -4,6 +4,7 @@ const sc2 = @import("zig-sc2");
 pub const Options = struct {
     session: sc2.ReplaySession.Config = .{ .installation = "", .replay = "", .player_id = 0 },
     probe: bool = false,
+    projection_markers: bool = false,
     capture: ?[]const u8 = null,
     probe_loops: u32 = 64,
     camera_distance: f32 = 40,
@@ -20,6 +21,7 @@ pub const usage =
     \\  --width N --height N  Render resolution (default: 640x480)
     \\  --camera-distance N   Initial camera distance (10-100, default: 40)
     \\  --verbose-sc2         Show SC2's own stdout/stderr
+    \\  --projection-markers  Show projected unit ground anchors (camera validation)
     \\  --probe               Test replay rendering without opening a window
     \\  --probe-loops N       Loops to advance for probe (default: 64)
     \\  --capture PATH        Save final probe/displayed frame as PPM
@@ -27,6 +29,7 @@ pub const usage =
     \\Optional keybinds.conf in the working directory overrides keyboard controls.
     \\Default keys: Space pause; Up/Down or [ / ] speed; Right step paused; C toggle chat; Escape quit.
     \\Click/drag minimap to move the camera. WASD pans; mouse wheel or +/- zooms.
+    \\Click a unit for its orders and target arrows; right-click to clear selection.
     \\
 ;
 
@@ -42,6 +45,10 @@ pub fn parse(args: []const []const u8) !Options {
         }
         if (std.mem.eql(u8, key, "--verbose-sc2")) {
             result.session.verbose = true;
+            continue;
+        }
+        if (std.mem.eql(u8, key, "--projection-markers")) {
+            result.projection_markers = true;
             continue;
         }
         if (std.mem.eql(u8, key, "--probe")) {

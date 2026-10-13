@@ -7,6 +7,7 @@ const images = @import("image.zig");
 const replay = @import("replay_worker.zig");
 const Renderer = @import("renderer.zig").Renderer;
 const keybinds = @import("keybinds.zig");
+const projection = @import("camera_projection.zig");
 
 // Signal handlers only touch a lock-free atomic; cleanup runs on the normal thread.
 var interrupted = std.atomic.Value(bool).init(false);
@@ -26,6 +27,7 @@ const App = struct {
     minimap_drag: @import("minimap_drag.zig").Drag = .{},
     chat: @import("replay_data.zig").ChatQueue = .{},
     chat_visible: bool = true,
+    selected_tag: ?u64 = null,
 
     fn fromUserdata(ptr: ?*anyopaque) *App {
         return @ptrCast(@alignCast(ptr.?));
@@ -40,6 +42,10 @@ const App = struct {
         if (self.worker.takeFrameAndChat(&self.chat)) |next| {
             if (self.current) |old| old.deinit(self.worker.allocator);
             self.current = next;
+            if (self.selected_tag) |tag| {
+                const unit = next.scene.find(tag);
+                if (unit == null or !unit.?.visible) self.selected_tag = null;
+            }
         }
         const dt = sokol.app.frameDuration();
         self.elapsed += dt;
@@ -72,7 +78,13 @@ const App = struct {
             .labels = labels,
             .speed = speed,
             .state = if (ended) .ended else if (!ready) .loading else if (paused) .paused else .playing,
-        }, .{ .players = &players, .chat = &self.chat, .chat_visible = self.chat_visible });
+        }, .{
+            .players = &players,
+            .chat = &self.chat,
+            .chat_visible = self.chat_visible,
+            .selected_tag = self.selected_tag,
+            .projection_markers = self.options.projection_markers,
+        });
     }
 
     fn cleanup(ptr: ?*anyopaque) callconv(.c) void {
@@ -89,6 +101,18 @@ const App = struct {
             self.chat_visible = !self.chat_visible;
             return;
         }
+        if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .RIGHT) {
+            self.selected_tag = null;
+            return;
+        }
+        if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .LEFT) {
+            if (self.renderer.blocksWorldClick(ev.*.mouse_x, ev.*.mouse_y)) return;
+            if (!self.renderer.minimap_rect.contains(ev.*.mouse_x, ev.*.mouse_y)) {
+                if (self.current) |current| self.selected_tag = projection.pick(&current.scene, self.renderer.map_rect, @floatFromInt(current.map.width), @floatFromInt(current.map.height), ev.*.mouse_x, ev.*.mouse_y);
+                return;
+            }
+        }
+        if (ev.*.type == .MOUSE_SCROLL and self.renderer.blocksWorldClick(ev.*.mouse_x, ev.*.mouse_y)) return;
         if (ev.*.type == .UNFOCUSED) {
             // Key releases may be delivered elsewhere after losing focus.
             self.pan.clear();
@@ -140,11 +164,11 @@ const App = struct {
             // Sokol mouse coordinates and framebuffer coordinates are both physical pixels.
             const rect = self.renderer.minimap_rect;
             if (self.minimap_drag.begin(rect, ev.*.mouse_x, ev.*.mouse_y)) |point| {
-                self.worker.requestPosition(point.x * self.worker.map_width, point.y * self.worker.map_height);
+                self.worker.requestMinimapPosition(point.x, point.y);
             }
         } else if (ev.*.type == .MOUSE_MOVE) {
             if (self.minimap_drag.update(self.renderer.minimap_rect, ev.*.mouse_x, ev.*.mouse_y)) |point| {
-                self.worker.requestPosition(point.x * self.worker.map_width, point.y * self.worker.map_height);
+                self.worker.requestMinimapPosition(point.x, point.y);
             }
         }
     }

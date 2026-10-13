@@ -1,5 +1,6 @@
 const std = @import("std");
 const protocol = @import("zig-sc2").sc2p;
+const observation_data = @import("observation_data.zig");
 
 pub const Image = struct {
     width: i32,
@@ -77,17 +78,25 @@ pub const Frame = struct {
     minimap: ?Image,
     game_loop: u32,
     ended: bool,
+    scene: @import("replay_data.zig").Scene = .{},
 
     pub fn fromObservation(allocator: std.mem.Allocator, response: protocol.ResponseObservation, status: protocol.Status) !Frame {
+        return fromObservationWithContext(allocator, response, status, .{});
+    }
+
+    pub fn fromObservationWithContext(allocator: std.mem.Allocator, response: protocol.ResponseObservation, status: protocol.Status, context: observation_data.Context) !Frame {
         const obs = response.observation orelse return error.MissingObservation;
         const render = obs.render orelse return error.MissingRenderedImage;
         const map = try Image.fromProto(allocator, render.map orelse return error.MissingRenderedImage);
         errdefer map.deinit(allocator);
         const minimap = if (render.minimap) |m| try Image.fromProto(allocator, m) else null;
+        errdefer if (minimap) |m| m.deinit(allocator);
         if (minimap) |m| m.darkenWhitePadding();
+        const scene = try observation_data.capture(allocator, obs.raw, context);
         return .{
             .map = map,
             .minimap = minimap,
+            .scene = scene,
             .game_loop = obs.game_loop orelse 0,
             .ended = status == .ended or (if (response.player_result) |r| r.len > 0 else false),
         };
@@ -96,8 +105,25 @@ pub const Frame = struct {
     pub fn deinit(self: Frame, allocator: std.mem.Allocator) void {
         self.map.deinit(allocator);
         if (self.minimap) |m| m.deinit(allocator);
+        self.scene.deinit(allocator);
     }
 };
+
+test "snapshot construction cleans up every partial allocation on failure" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
+        fn run(allocator: std.mem.Allocator) !void {
+            var pixels = [_]u8{ 10, 20, 30 };
+            const image: protocol.ImageData = .{ .size = .{ .x = 1, .y = 1 }, .bits_per_pixel = 24, .image = &pixels };
+            var orders = [_]protocol.UnitOrder{.{ .target = .{ .tag = 2 } }};
+            var units = [_]protocol.Unit{.{ .tag = 1, .orders = &orders }};
+            const frame = try Frame.fromObservation(allocator, .{ .observation = .{
+                .render = .{ .map = image, .minimap = image },
+                .raw = .{ .units = &units },
+            } }, .in_replay);
+            defer frame.deinit(allocator);
+        }
+    }.run, .{});
+}
 
 test "RGB conversion owns its bytes and preserves orientation" {
     var source = [_]u8{ 255, 0, 0, 0, 255, 0 };
