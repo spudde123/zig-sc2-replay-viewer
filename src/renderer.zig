@@ -55,6 +55,7 @@ const Texture = struct {
 pub const Hud = struct {
     duration_loops: u32 = 0,
     labels: @import("player_labels.zig").Labels = .{},
+    bindings: @import("keybinds.zig").Keybinds = .{},
     speed: f64 = 1,
     state: enum { loading, playing, paused, ended } = .loading,
 
@@ -63,7 +64,9 @@ pub const Hud = struct {
         var duration_buffer: [16]u8 = undefined;
         const current = try formatGameTime(&current_buffer, game_loop);
         const duration = try formatGameTime(&duration_buffer, self.duration_loops);
-        return std.mem.printSentinel(buffer, "{s} / {s} | {d}x | {s}\nLoop {d} / {d}\nSpace pause | Up/Down speed | WASD camera\nWheel or +/- zoom", .{ current, duration, self.speed, @tagName(self.state), game_loop, self.duration_loops }, 0);
+        var hints_buffer: [512]u8 = undefined;
+        const hints = try self.bindings.formatHints(&hints_buffer);
+        return std.mem.printSentinel(buffer, "{s} / {s} | {d}x | {s}\nLoop {d} / {d}\n{s}", .{ current, duration, self.speed, @tagName(self.state), game_loop, self.duration_loops, hints }, 0);
     }
 };
 
@@ -122,7 +125,7 @@ pub const Renderer = struct {
                 self.quad(self.minimap.view, self.minimap_rect);
             }
         }
-        var hud_buffer: [256]u8 = undefined;
+        var hud_buffer: [512]u8 = undefined;
         const label = hud.format(&hud_buffer, if (frame) |f| f.game_loop else 0) catch unreachable;
         var columns: usize = 0;
         var lines: usize = 0;
@@ -203,10 +206,10 @@ pub const Renderer = struct {
 };
 
 test "HUD shows frame time, duration, speed, state and loop counts" {
-    var buffer: [256]u8 = undefined;
+    var buffer: [512]u8 = undefined;
     const hud: Hud = .{ .duration_loops = 14884, .speed = 0.25, .state = .paused };
     try std.testing.expectEqualStrings(
-        "01:00 / 11:04 | 0.25x | paused\nLoop 1344 / 14884\nSpace pause | Up/Down speed | WASD camera\nWheel or +/- zoom",
+        "01:00 / 11:04 | 0.25x | paused\nLoop 1344 / 14884\nSPACE pause | UP/DOWN speed | W/A/S/D pan\nWheel or EQUAL/MINUS zoom | RIGHT step | ESCAPE quit",
         try hud.format(&buffer, 1344),
     );
     const loading: Hud = .{};

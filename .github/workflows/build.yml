@@ -55,7 +55,7 @@ jobs:
       - name: Package binary
         run: |
           mkdir -p "dist/$PACKAGE"
-          cp zig-out/bin/zig_sc2_replay_watcher README.md LICENSE "dist/$PACKAGE/"
+          cp zig-out/bin/zig_sc2_replay_watcher README.md LICENSE keybinds.conf.example "dist/$PACKAGE/"
           cp -R licenses "dist/$PACKAGE/"
           cp lib/zig-sc2/LICENSE "dist/$PACKAGE/licenses/zig-sc2.txt"
           tar -C dist -czf "dist/$PACKAGE.tar.gz" "$PACKAGE"

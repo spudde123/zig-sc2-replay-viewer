@@ -1,0 +1,17 @@
+# Copy to keybinds.conf in the directory you launch the viewer from.
+# Each line replaces an action's keys; omitted actions retain their defaults.
+# Names are case-insensitive. Up to four comma-separated keys per action.
+# Use "none" to disable an action. Keys cannot be shared across actions.
+# Keyboard modifiers/chords are not supported. Mouse controls remain fixed.
+
+pause = SPACE
+speed_up = UP, RIGHT_BRACKET
+speed_down = DOWN, LEFT_BRACKET
+step = RIGHT
+zoom_in = EQUAL, KP_ADD
+zoom_out = MINUS, KP_SUBTRACT
+quit = ESCAPE
+pan_up = W
+pan_left = A
+pan_down = S
+pan_right = D

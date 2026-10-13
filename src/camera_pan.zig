@@ -4,28 +4,33 @@ const Camera = @import("replay_worker.zig").Camera;
 
 /// GUI-owned held-key state; movement is integrated each display frame.
 pub const Pan = struct {
-    keys: [4]bool = @splat(false), // W, A, S, D
+    bindings: @import("keybinds.zig").Keybinds = .{},
+    // Track physical keys, not just directions: releasing one alias must not
+    // stop a direction while another alias for it remains held.
+    keys: [512]bool = @splat(false),
 
     pub fn setKey(self: *Pan, key: Keycode, pressed: bool) bool {
-        const index: usize = switch (key) {
-            .W => 0,
-            .A => 1,
-            .S => 2,
-            .D => 3,
-            else => return false,
-        };
-        self.keys[index] = pressed;
+        const action = self.bindings.actionFor(key) orelse return false;
+        if (!action.isPan()) return false;
+        self.keys[@intCast(@backingInt(key))] = pressed;
         return true;
+    }
+
+    fn held(self: *const Pan, action: @import("keybinds.zig").Action) bool {
+        for (self.bindings.keys(action)) |key| {
+            if (self.keys[@intCast(@backingInt(key))]) return true;
+        }
+        return false;
     }
 
     pub fn clear(self: *Pan) void {
         self.keys = @splat(false);
     }
 
-    pub fn apply(self: Pan, camera: *Camera, seconds: f64, width: f32, height: f32) bool {
+    pub fn apply(self: *const Pan, camera: *Camera, seconds: f64, width: f32, height: f32) bool {
         if (!std.math.isFinite(seconds) or seconds <= 0) return false;
-        const dx: f32 = @as(f32, @floatFromInt(@intFromBool(self.keys[3]))) - @as(f32, @floatFromInt(@intFromBool(self.keys[1])));
-        const dy: f32 = @as(f32, @floatFromInt(@intFromBool(self.keys[0]))) - @as(f32, @floatFromInt(@intFromBool(self.keys[2])));
+        const dx: f32 = @as(f32, @floatFromInt(@intFromBool(self.held(.pan_right)))) - @as(f32, @floatFromInt(@intFromBool(self.held(.pan_left))));
+        const dy: f32 = @as(f32, @floatFromInt(@intFromBool(self.held(.pan_up)))) - @as(f32, @floatFromInt(@intFromBool(self.held(.pan_down))));
         const length = @sqrt(dx * dx + dy * dy);
         if (length == 0) return false;
         // Fixed world-space speed, independent of replay speed and keyboard repeat.
@@ -61,6 +66,18 @@ test "held keys pan continuously with normalized diagonals and preserve zoom" {
     try std.testing.expect(pan.apply(&diagonal, 0.02, 256, 256));
     pan.clear();
     try std.testing.expect(!pan.apply(&diagonal, 0.02, 256, 256));
+}
+
+test "custom pan aliases remain held until every alias is released" {
+    var pan: Pan = .{ .bindings = try @import("keybinds.zig").parse("pan_up = I, F1\n") };
+    var camera: Camera = .{ .x = 100, .y = 100 };
+    try std.testing.expect(!pan.setKey(.W, true));
+    _ = pan.setKey(.I, true);
+    _ = pan.setKey(.F1, true);
+    _ = pan.setKey(.I, false);
+    try std.testing.expect(pan.apply(&camera, 0.02, 256, 256));
+    _ = pan.setKey(.F1, false);
+    try std.testing.expect(!pan.apply(&camera, 0.02, 256, 256));
 }
 
 test "panning is frame-rate independent, bounded and limits stalls" {

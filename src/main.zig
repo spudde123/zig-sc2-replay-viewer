@@ -6,6 +6,7 @@ const cli = @import("cli.zig");
 const images = @import("image.zig");
 const replay = @import("replay_worker.zig");
 const Renderer = @import("renderer.zig").Renderer;
+const keybinds = @import("keybinds.zig");
 
 // Signal handlers only touch a lock-free atomic; cleanup runs on the normal thread.
 var interrupted = std.atomic.Value(bool).init(false);
@@ -21,6 +22,7 @@ const App = struct {
     elapsed: f64 = 0,
     failed: bool = false,
     pan: @import("camera_pan.zig").Pan = .{},
+    bindings: keybinds.Keybinds = .{},
 
     fn fromUserdata(ptr: ?*anyopaque) *App {
         return @ptrCast(@alignCast(ptr.?));
@@ -64,6 +66,7 @@ const App = struct {
         self.renderer.draw(self.current, .{
             .duration_loops = duration,
             .labels = labels,
+            .bindings = self.bindings,
             .speed = speed,
             .state = if (ended) .ended else if (!ready) .loading else if (paused) .paused else .playing,
         });
@@ -86,26 +89,24 @@ const App = struct {
         self.worker.lock();
         defer self.worker.unlock();
         if (ev.*.type == .KEY_DOWN) {
-            if (ev.*.key_code == .ESCAPE) {
-                sokol.app.requestQuit();
-                return;
-            }
-            if (ev.*.key_repeat and (ev.*.key_code == .SPACE or ev.*.key_code == .LEFT_BRACKET or ev.*.key_code == .RIGHT_BRACKET or ev.*.key_code == .UP or ev.*.key_code == .DOWN)) return;
-            switch (ev.*.key_code) {
-                .SPACE => {
+            const action = self.bindings.actionFor(ev.*.key_code) orelse return;
+            if (ev.*.key_repeat and !action.acceptsRepeat()) return;
+            switch (action) {
+                .quit => sokol.app.requestQuit(),
+                .pause => {
                     self.worker.playback.setPaused(!self.worker.playback.paused);
                     self.worker.single_steps = 0;
                     self.worker.revision += 1;
                 },
-                .LEFT_BRACKET, .RIGHT_BRACKET, .UP, .DOWN => {
-                    self.worker.playback.changeSpeed(ev.*.key_code == .RIGHT_BRACKET or ev.*.key_code == .UP);
+                .speed_down, .speed_up => {
+                    self.worker.playback.changeSpeed(action == .speed_up);
                     self.worker.revision += 1;
                 },
-                .RIGHT => if (self.worker.playback.paused and !self.worker.ended) {
+                .step => if (self.worker.playback.paused and !self.worker.ended) {
                     self.worker.single_steps = @min(32, self.worker.single_steps + 1);
                 },
-                .EQUAL, .KP_ADD => self.worker.requestZoom(1),
-                .MINUS, .KP_SUBTRACT => self.worker.requestZoom(-1),
+                .zoom_in => self.worker.requestZoom(1),
+                .zoom_out => self.worker.requestZoom(-1),
                 else => {},
             }
         } else if (ev.*.type == .MOUSE_SCROLL) {
@@ -161,9 +162,12 @@ fn run(init: std.process.Init) !void {
     }
     if (options.probe) return probe(allocator, init.io, options);
 
+    const bindings = keybinds.load(allocator, init.io);
     var app: App = .{
         .worker = .{ .io = init.io, .allocator = allocator, .config = options.session, .initial_distance = options.camera_distance },
         .options = options,
+        .bindings = bindings,
+        .pan = .{ .bindings = bindings },
     };
     defer {
         if (app.current) |f| f.deinit(allocator);

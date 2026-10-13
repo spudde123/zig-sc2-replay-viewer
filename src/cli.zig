@@ -24,7 +24,8 @@ pub const usage =
     \\  --probe-loops N       Loops to advance for probe (default: 64)
     \\  --capture PATH        Save final probe/displayed frame as PPM
     \\  --quit-after SECONDS  Automatically close window (smoke testing)
-    \\Keys: Space pause; Up/Down or [ / ] speed; Right step paused; Escape quit.
+    \\Optional keybinds.conf in the working directory overrides keyboard controls.
+    \\Default keys: Space pause; Up/Down or [ / ] speed; Right step paused; Escape quit.
     \\Click minimap to move the camera. WASD pans; mouse wheel or +/- zooms.
     \\
 ;

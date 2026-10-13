@@ -66,6 +66,43 @@ SC2 cannot download maps automatically.
 | Click minimap | Move the camera |
 | Escape / close window / Ctrl+C | Exit and clean up SC2 |
 
+### Custom keybinds
+
+At startup, the viewer optionally reads `keybinds.conf` from the **working
+directory** (where you launch it, not necessarily where the executable lives).
+Copy `keybinds.conf.example` to `keybinds.conf`, or create a file with only the
+controls you want to change:
+
+```ini
+# Replace WASD with IJKL and pause with P.
+pause = P
+pan_up = I
+pan_left = J
+pan_down = K
+pan_right = L
+```
+
+Each `action = key, key` line replaces that action's bindings; omitted actions
+retain their defaults. Available actions are `pause`, `speed_up`, `speed_down`,
+`step`, `zoom_in`, `zoom_out`, `quit`, `pan_up`, `pan_left`, `pan_down`, and
+`pan_right`. Use `none` to unbind an action. Up to four keys per action are
+supported; names are case-insensitive and `#` starts a comment.
+
+Key names follow Sokol's keycodes: letters, digits, `SPACE`, `ESCAPE`, `ENTER`,
+`TAB`, `UP`, `DOWN`, `LEFT`, `RIGHT`, `F1`–`F25`, `PAGE_UP`, `PAGE_DOWN`,
+`LEFT_BRACKET`, `RIGHT_BRACKET`, `EQUAL`, `MINUS`, `KP_ADD`, `KP_SUBTRACT`, etc.
+`+`/`=` alias `EQUAL`, `-` aliases `MINUS`, and `[`/`]` alias the bracket keys.
+These are keycodes, not typed characters; keyboard-layout differences may apply.
+Modifier combinations such as `Ctrl+P` are not supported. Mouse-wheel zoom and
+left-click minimap navigation remain fixed.
+
+If the file is missing, defaults are used silently. An unreadable or invalid file
+(including unknown names, duplicate actions, conflicting keys after merging with
+defaults, or files exceeding the 16 KiB read limit) falls back to **all defaults**
+with a warning. To move a key to another action, also rebind or disable its old
+action. Changes take effect after restarting. The HUD displays the first active
+key for each action; `--help` lists the defaults.
+
 The upper-left HUD shows game time / duration as `mm:ss`, playback speed and
 state, loop counts, and control hints. The window title stays static.
 Time is derived from the displayed frame's loop count at 22.4 loops per second,
