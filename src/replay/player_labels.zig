@@ -1,6 +1,6 @@
 const std = @import("std");
 const sc2 = @import("zig-sc2");
-const Mapping = @import("minimap_mapping.zig").Mapping;
+const Mapping = @import("../camera/minimap_mapping.zig").Mapping;
 
 pub const Label = struct {
     id: u32 = 0,

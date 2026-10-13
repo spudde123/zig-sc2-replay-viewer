@@ -1,7 +1,7 @@
 //! Empirical SC2 4.10 observer RGB camera. See docs/camera-projection.md for
 //! measurements and limitations. This is not an engine-provided view matrix.
 const std = @import("std");
-const data = @import("replay_data.zig");
+const data = @import("../replay/replay_data.zig");
 
 pub const Rect = struct {
     x: f32 = 0,

@@ -3,12 +3,12 @@ const sokol = @import("sokol");
 const gfx = sokol.gfx;
 const gl = sokol.gl;
 const text = sokol.debugtext;
-const formatGameTime = @import("playback.zig").formatGameTime;
-const Image = @import("image.zig").Image;
-const Frame = @import("image.zig").Frame;
-const data = @import("replay_data.zig");
+const formatGameTime = @import("../replay/playback.zig").formatGameTime;
+const Image = @import("../replay/image.zig").Image;
+const Frame = @import("../replay/image.zig").Frame;
+const data = @import("../replay/replay_data.zig");
 const chat_view = @import("chat_view.zig");
-const projection = @import("camera_projection.zig");
+const projection = @import("../camera/camera_projection.zig");
 const unit_overlay = @import("unit_overlay.zig");
 const production = @import("production_view.zig");
 
@@ -59,7 +59,7 @@ const Texture = struct {
 
 pub const Hud = struct {
     duration_loops: u32 = 0,
-    labels: @import("player_labels.zig").Labels = .{},
+    labels: @import("../replay/player_labels.zig").Labels = .{},
     speed: f64 = 1,
     state: enum { loading, playing, paused, ended } = .loading,
 
@@ -259,7 +259,7 @@ pub const Renderer = struct {
         }
     }
 
-    fn drawPlayerLabels(self: *Renderer, labels: @import("player_labels.zig").Labels, width: f32, height: f32) void {
+    fn drawPlayerLabels(self: *Renderer, labels: @import("../replay/player_labels.zig").Labels, width: f32, height: f32) void {
         const rect = self.minimap_rect;
         if (rect.width < 8 or rect.height < 8) return;
         text.font(0);

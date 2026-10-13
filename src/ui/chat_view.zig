@@ -1,8 +1,8 @@
 //! Display-only chat formatting. Protocol data and worker synchronization stay
 //! outside this module; the bounded raw history can later feed a Unicode UI.
 const std = @import("std");
-const data = @import("replay_data.zig");
-const formatGameTime = @import("playback.zig").formatGameTime;
+const data = @import("../replay/replay_data.zig");
+const formatGameTime = @import("../replay/playback.zig").formatGameTime;
 
 pub const max_columns = 80;
 pub const max_rows = 12;

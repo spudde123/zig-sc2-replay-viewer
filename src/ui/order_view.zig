@@ -1,6 +1,6 @@
 //! Bounded display formatting for one selected unit; no SC2/graphics dependency.
 const std = @import("std");
-const data = @import("replay_data.zig");
+const data = @import("../replay/replay_data.zig");
 pub const max_orders = 1;
 pub const max_columns = 64;
 pub const max_rows = 11;

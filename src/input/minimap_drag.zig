@@ -1,5 +1,5 @@
 const std = @import("std");
-const Rect = @import("renderer.zig").Rect;
+const Rect = @import("../ui/renderer.zig").Rect;
 
 pub const Point = struct { x: f32, y: f32 };
 

@@ -1,6 +1,6 @@
 const std = @import("std");
 const Keycode = @import("sokol").app.Keycode;
-const Camera = @import("replay_worker.zig").Camera;
+const Camera = @import("../replay/replay_worker.zig").Camera;
 
 /// GUI-owned held-key state; movement is integrated each display frame.
 pub const Pan = struct {

@@ -1,6 +1,6 @@
 //! Allocation-free grouping/layout of frame-aligned construction, training and research.
 const std = @import("std");
-const data = @import("replay_data.zig");
+const data = @import("../replay/replay_data.zig");
 pub const max_groups = 128;
 pub const max_rows = 32;
 pub const max_bars = 3;

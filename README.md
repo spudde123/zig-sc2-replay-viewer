@@ -272,25 +272,35 @@ save SC2's main image, not the viewer's HUD, chat, unit overlays, or minimap lay
 
 ## Structure
 
+Entry points (`main.zig`, `root.zig`) and CLI parsing remain at the `src/` root.
+Files are grouped by responsibility:
+
+- `src/replay/`: SC2 I/O, playback timing, owned observations/images, player
+  metadata and the production ability catalog.
+- `src/input/`: keybindings, held-key camera panning and minimap drag state.
+- `src/camera/`: world/image projection and minimap coordinate transforms.
+- `src/ui/`: presentation-only formatting/layout and Sokol rendering.
+
 - `lib/zig-sc2`: submodule containing the protocol/client and `ReplaySession`
   process/version lifecycle. Replay operations are `observe()`, `advance()`,
   and `close()`; the existing bot runner retains its defaults.
-- `src/replay_worker.zig`: owns SC2 I/O, playback timing, a latest-frame mailbox,
+- `src/replay/replay_worker.zig`: owns SC2 I/O, playback timing, a latest-frame mailbox,
   and a separate FIFO chat queue. Chat is collected from every observation,
   including initialization and camera-only observations.
-- `src/replay_data.zig`: value-owned player/chat data and frame-aligned unit/order
+- `src/replay/replay_data.zig`: value-owned player/chat data and frame-aligned unit/order
   scenes, independent of protocol and rendering types. Scenes use sorted units
   and flattened order arrays; chat uses bounded event queues.
-- `src/observation_data.zig`: copies borrowed raw observations, samples terrain,
+- `src/replay/observation_data.zig`: copies borrowed raw observations, samples terrain,
   and attaches the camera command matching the image.
-- `src/camera_projection.zig`: empirical 3D projection, exact letterboxing,
+- `src/camera/camera_projection.zig`: empirical 3D projection, exact letterboxing,
   screen-space picking and line clipping.
-- `src/chat_view.zig`, `src/order_view.zig`: bounded presentation-only formatting.
-- `src/unit_overlay.zig`: GUI-thread selection footprint, arrows and order box.
-- `src/renderer.zig`: owns Sokol textures and composes the world image/overlays,
-  minimap, playback HUD and chat. GUI state holds the selected tag and recent
+- `src/ui/chat_view.zig`, `src/ui/order_view.zig`, `src/ui/production_view.zig`:
+  bounded presentation-only formatting and production grouping/layout.
+- `src/ui/unit_overlay.zig`: GUI-thread selection footprint, arrows and order box.
+- `src/ui/renderer.zig`: owns Sokol textures and composes the world image/overlays,
+  minimap, playback HUD, production/research and chat. GUI state holds the selected tag and recent
   chat history; it never retains SC2 response pointers.
-- `src/cli.zig`, `src/playback.zig`, `src/image.zig`: argument parsing, stepping
+- `src/cli.zig`, `src/replay/playback.zig`, `src/replay/image.zig`: argument parsing, stepping
   and time formatting, and image conversion/ownership.
 
 ## License

@@ -5,7 +5,7 @@ const Playback = @import("playback.zig").Playback;
 const player_labels = @import("player_labels.zig");
 const data = @import("replay_data.zig");
 const observation_data = @import("observation_data.zig");
-const minimap_mapping = @import("minimap_mapping.zig");
+const minimap_mapping = @import("../camera/minimap_mapping.zig");
 
 pub const Camera = struct {
     x: f32,

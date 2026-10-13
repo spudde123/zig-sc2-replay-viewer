@@ -3,11 +3,11 @@ pub const std_options: std.Options = .{ .log_level = .info };
 const sokol = @import("sokol");
 const sc2 = @import("zig-sc2");
 const cli = @import("cli.zig");
-const images = @import("image.zig");
-const replay = @import("replay_worker.zig");
-const Renderer = @import("renderer.zig").Renderer;
-const keybinds = @import("keybinds.zig");
-const projection = @import("camera_projection.zig");
+const images = @import("replay/image.zig");
+const replay = @import("replay/replay_worker.zig");
+const Renderer = @import("ui/renderer.zig").Renderer;
+const keybinds = @import("input/keybinds.zig");
+const projection = @import("camera/camera_projection.zig");
 
 // Signal handlers only touch a lock-free atomic; cleanup runs on the normal thread.
 var interrupted = std.atomic.Value(bool).init(false);
@@ -22,10 +22,10 @@ const App = struct {
     current: ?images.Frame = null,
     elapsed: f64 = 0,
     failed: bool = false,
-    pan: @import("camera_pan.zig").Pan = .{},
+    pan: @import("input/camera_pan.zig").Pan = .{},
     bindings: keybinds.Keybinds = .{},
-    minimap_drag: @import("minimap_drag.zig").Drag = .{},
-    chat: @import("replay_data.zig").ChatQueue = .{},
+    minimap_drag: @import("input/minimap_drag.zig").Drag = .{},
+    chat: @import("replay/replay_data.zig").ChatQueue = .{},
     chat_visible: bool = true,
     production_visible: bool = true,
     selected_tag: ?u64 = null,
