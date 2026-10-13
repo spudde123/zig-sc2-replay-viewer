@@ -11,6 +11,14 @@ pub const CameraPose = struct {
     distance: f32,
 };
 
+pub const Product = struct {
+    pub const Kind = enum { unit, research };
+    key: u64,
+    kind: Kind,
+    name: [49:0]u8 = @splat(0),
+    replaces_construction: bool = false,
+};
+
 pub const Unit = struct {
     tag: u64,
     type_id: u32,
@@ -20,6 +28,7 @@ pub const Unit = struct {
     radius: f32,
     visible: bool,
     flying: bool,
+    build_progress: f32 = 0,
     health: f32 = 0,
     health_max: f32 = 0,
     shield: f32 = 0,
@@ -41,6 +50,7 @@ pub const Order = struct {
         unit: u64,
     };
     ability_id: u32,
+    product: ?Product = null,
     name: [49:0]u8 = @splat(0),
     progress: f32,
     target: Target,

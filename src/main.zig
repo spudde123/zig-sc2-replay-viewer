@@ -27,6 +27,7 @@ const App = struct {
     minimap_drag: @import("minimap_drag.zig").Drag = .{},
     chat: @import("replay_data.zig").ChatQueue = .{},
     chat_visible: bool = true,
+    production_visible: bool = true,
     selected_tag: ?u64 = null,
 
     fn fromUserdata(ptr: ?*anyopaque) *App {
@@ -82,6 +83,7 @@ const App = struct {
             .players = &players,
             .chat = &self.chat,
             .chat_visible = self.chat_visible,
+            .production_visible = self.production_visible,
             .selected_tag = self.selected_tag,
             .projection_markers = self.options.projection_markers,
         });
@@ -99,6 +101,12 @@ const App = struct {
             self.renderer.chat_button_rect.contains(ev.*.mouse_x, ev.*.mouse_y))
         {
             self.chat_visible = !self.chat_visible;
+            return;
+        }
+        if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .LEFT and
+            self.renderer.production_button_rect.contains(ev.*.mouse_x, ev.*.mouse_y))
+        {
+            self.production_visible = !self.production_visible;
             return;
         }
         if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .RIGHT) {
@@ -133,6 +141,10 @@ const App = struct {
         }
         if (ev.*.type == .KEY_DOWN and self.bindings.actionFor(ev.*.key_code) == .toggle_chat) {
             if (!ev.*.key_repeat) self.chat_visible = !self.chat_visible;
+            return;
+        }
+        if (ev.*.type == .KEY_DOWN and self.bindings.actionFor(ev.*.key_code) == .toggle_production) {
+            if (!ev.*.key_repeat) self.production_visible = !self.production_visible;
             return;
         }
         self.worker.lock();

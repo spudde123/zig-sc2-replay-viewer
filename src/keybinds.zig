@@ -15,6 +15,7 @@ pub const Action = enum {
     pan_down,
     pan_right,
     toggle_chat,
+    toggle_production,
 
     pub fn isPan(self: Action) bool {
         return switch (self) {
@@ -56,6 +57,7 @@ pub const Keybinds = struct {
         binding(&.{.S}),
         binding(&.{.D}),
         binding(&.{.C}),
+        binding(&.{.P}),
     },
 
     pub fn keys(self: *const Keybinds, action: Action) []const Keycode {
@@ -78,11 +80,12 @@ pub const Keybinds = struct {
     }
 
     pub fn formatHints(self: *const Keybinds, buffer: []u8) std.mem.PrintError![]const u8 {
-        return std.fmt.bufPrint(buffer, "{s} pause | {s}/{s} speed | {s}/{s}/{s}/{s} pan\nWheel or {s}/{s} zoom | {s} step | {s} quit | {s} chat", .{
-            self.primaryName(.pause),     self.primaryName(.speed_up), self.primaryName(.speed_down),
-            self.primaryName(.pan_up),    self.primaryName(.pan_left), self.primaryName(.pan_down),
-            self.primaryName(.pan_right), self.primaryName(.zoom_in),  self.primaryName(.zoom_out),
-            self.primaryName(.step),      self.primaryName(.quit),     self.primaryName(.toggle_chat),
+        return std.fmt.bufPrint(buffer, "{s} pause | {s}/{s} speed | {s}/{s}/{s}/{s} pan\nWheel or {s}/{s} zoom | {s} step | {s} quit | {s} chat | {s} production", .{
+            self.primaryName(.pause),             self.primaryName(.speed_up), self.primaryName(.speed_down),
+            self.primaryName(.pan_up),            self.primaryName(.pan_left), self.primaryName(.pan_down),
+            self.primaryName(.pan_right),         self.primaryName(.zoom_in),  self.primaryName(.zoom_out),
+            self.primaryName(.step),              self.primaryName(.quit),     self.primaryName(.toggle_chat),
+            self.primaryName(.toggle_production),
         });
     }
 };
@@ -167,7 +170,7 @@ fn loadFromDir(dir: std.Io.Dir, allocator: std.mem.Allocator, io: std.Io) Keybin
 }
 
 test "partial overrides, aliases, comments, CRLF and disabling preserve other defaults" {
-    const config = try parse("# custom\r\npause = p, tab # aliases\r\nzoom_in = +, KP_ADD\npan_up = i\nstep = none\n");
+    const config = try parse("# custom\r\npause = p, tab # aliases\r\ntoggle_production = none\r\nzoom_in = +, KP_ADD\npan_up = i\nstep = none\n");
     try std.testing.expectEqual(Action.pause, config.actionFor(.P).?);
     try std.testing.expectEqual(Action.pause, config.actionFor(.TAB).?);
     try std.testing.expect(config.actionFor(.SPACE) == null);
@@ -191,10 +194,25 @@ test "chat toggle has a configurable default, can be disabled and ignores repeat
     try std.testing.expectEqual(Action.toggle_chat, custom.actionFor(.TAB).?);
     try std.testing.expect(custom.actionFor(.C) == null);
     var hints: [512]u8 = undefined;
-    try std.testing.expect(std.mem.endsWith(u8, try custom.formatHints(&hints), "F4 chat"));
+    try std.testing.expect(std.mem.endsWith(u8, try custom.formatHints(&hints), "F4 chat | P production"));
     const disabled = try parse("toggle_chat = none\n");
     try std.testing.expect(disabled.actionFor(.C) == null);
     try std.testing.expectError(error.DuplicateKey, parse("toggle_chat = SPACE\n"));
+}
+
+test "production toggle defaults to P, supports aliases and disabling, and ignores repeat" {
+    const defaults: Keybinds = .{};
+    try std.testing.expectEqual(Action.toggle_production, defaults.actionFor(.P).?);
+    try std.testing.expect(!Action.toggle_production.acceptsRepeat());
+    const custom = try parse("toggle_production = F4, TAB\n");
+    try std.testing.expectEqual(Action.toggle_production, custom.actionFor(.F4).?);
+    try std.testing.expectEqual(Action.toggle_production, custom.actionFor(.TAB).?);
+    try std.testing.expect(custom.actionFor(.P) == null);
+    const disabled = try parse("toggle_production = none\n");
+    try std.testing.expect(disabled.actionFor(.P) == null);
+    try std.testing.expectError(error.DuplicateKey, parse("toggle_production = C\n"));
+    try std.testing.expectError(error.DuplicateKey, parse("pause = P\n"));
+    try std.testing.expectEqualDeep(defaults, parseOrDefault("toggle_production = NotAKey\n"));
 }
 
 test "malformed or ambiguous files fall back to the complete default set" {
@@ -215,7 +233,7 @@ test "file loading uses defaults for missing and invalid files and owns parsed d
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     try std.testing.expectEqualDeep(@as(Keybinds, .{}), loadFromDir(tmp.dir, std.testing.allocator, std.testing.io));
-    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = filename, .data = "pause = P\n" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = filename, .data = "pause = P\ntoggle_production = none\n" });
     const custom = loadFromDir(tmp.dir, std.testing.allocator, std.testing.io);
     try std.testing.expectEqual(Action.pause, custom.actionFor(.P).?);
     try tmp.dir.writeFile(std.testing.io, .{ .sub_path = filename, .data = "pause = P\nbad = W\n" });

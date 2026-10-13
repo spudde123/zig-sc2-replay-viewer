@@ -18,5 +18,7 @@ test {
     _ = @import("observation_data.zig");
     _ = @import("camera_projection.zig");
     _ = @import("order_view.zig");
+    _ = @import("production_catalog.zig");
+    _ = @import("production_view.zig");
     _ = @import("unit_overlay.zig");
 }

@@ -35,6 +35,7 @@ pub const Terrain = struct {
 pub const Context = struct {
     camera: ?struct { x: f32, y: f32, distance: f32 } = null,
     terrain: ?*const Terrain = null,
+    production_catalog: ?*const @import("production_catalog.zig").Catalog = null,
 };
 
 fn name(destination: []u8, source: ?[]const u8, id: u32) void {
@@ -74,6 +75,7 @@ pub fn capture(allocator: std.mem.Allocator, raw: ?p.ObservationRaw, context: Co
             .radius = unit.radius,
             .visible = unit.display_type == .visible and !unit.is_blip,
             .flying = unit.is_flying,
+            .build_progress = unit.build_progress,
             .health = unit.health,
             .health_max = unit.health_max,
             .shield = unit.shield,
@@ -106,7 +108,7 @@ pub fn capture(allocator: std.mem.Allocator, raw: ?p.ObservationRaw, context: Co
                     target = .{ .position = .{ .x = point.x, .y = point.y, .z = z } };
                 },
             }
-            result.orders[cursor] = .{ .ability_id = id, .progress = order.progress, .target = target };
+            result.orders[cursor] = .{ .ability_id = id, .progress = order.progress, .target = target, .product = if (context.production_catalog) |catalog| catalog.find(id) else null };
             name(&result.orders[cursor].name, std.enums.tagName(@TypeOf(order.ability_id), order.ability_id), id);
             cursor += 1;
         }
@@ -145,14 +147,39 @@ test "scene owns flattened orders, names and neutral targets after response reus
     try std.testing.expect(scene.find(999) == null);
 }
 
+test "production products survive response arena and catalog destruction" {
+    const Catalog = @import("production_catalog.zig").Catalog;
+    var unit_types = [_]p.UnitTypeData{.{ .unit_id = 45, .ability_id = 524, .name = "SCV" }};
+    var upgrades = [_]p.UpgradeData{.{ .upgrade_id = 7, .ability_id = 652, .name = "InfantryWeapons1" }};
+    const catalog = try Catalog.init(std.testing.allocator, .{ .units = &unit_types, .upgrades = &upgrades });
+    var orders = [_]p.UnitOrder{
+        .{ .ability_id = @fromBackingInt(524), .progress = 0.5 },
+        .{ .ability_id = @fromBackingInt(652), .progress = 0.25 },
+    };
+    var units = [_]p.Unit{.{ .tag = 20, .build_progress = 0.75, .orders = &orders }};
+    const scene = capture(std.testing.allocator, .{ .units = &units }, .{ .production_catalog = &catalog }) catch |err| {
+        catalog.deinit(std.testing.allocator);
+        return err;
+    };
+    catalog.deinit(std.testing.allocator);
+    defer scene.deinit(std.testing.allocator);
+    orders[0] = .{};
+    units[0] = .{};
+    const copied = scene.ordersFor(scene.find(20).?);
+    try std.testing.expectEqualStrings("SCV", std.mem.sliceTo(&copied[0].product.?.name, 0));
+    try std.testing.expect(copied[1].product.?.kind == .research);
+    try std.testing.expectEqualStrings("InfantryWeapons1", std.mem.sliceTo(&copied[1].product.?.name, 0));
+    try std.testing.expectEqual(@as(f32, 0.75), scene.find(20).?.build_progress);
+}
+
 test "unit vitals, resources and harvester counts survive response reuse" {
-    const expected: p.Unit = .{ .tag = 20, .health = 75, .health_max = 100, .shield = 25, .shield_max = 50, .energy = 0, .energy_max = 200, .mineral_contents = 1500, .vespene_contents = 2250, .assigned_harvesters = 2, .ideal_harvesters = 3 };
+    const expected: p.Unit = .{ .tag = 20, .build_progress = 0.5, .health = 75, .health_max = 100, .shield = 25, .shield_max = 50, .energy = 0, .energy_max = 200, .mineral_contents = 1500, .vespene_contents = 2250, .assigned_harvesters = 2, .ideal_harvesters = 3 };
     var units = [_]p.Unit{expected};
     const scene = try capture(std.testing.allocator, .{ .units = &units }, .{});
     defer scene.deinit(std.testing.allocator);
     units[0] = .{};
     const selected = scene.find(20).?;
-    inline for (.{ "health", "health_max", "shield", "shield_max", "energy", "energy_max", "mineral_contents", "vespene_contents", "assigned_harvesters", "ideal_harvesters" }) |field| {
+    inline for (.{ "build_progress", "health", "health_max", "shield", "shield_max", "energy", "energy_max", "mineral_contents", "vespene_contents", "assigned_harvesters", "ideal_harvesters" }) |field| {
         try std.testing.expectEqual(@field(expected, field), @field(selected.*, field));
     }
 }

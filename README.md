@@ -62,6 +62,7 @@ SC2 cannot download maps automatically.
 | Up / Down (also `]` / `[`) | Faster/slower: 0.25x–16x |
 | Right Arrow | Advance one simulation loop while paused |
 | C | Show/hide chat |
+| P | Show/hide production and research |
 | Hold WASD | Smooth camera pan; combine keys for diagonals |
 | Mouse wheel / `+` / `-` | Zoom in/out (keypad `+` / `-` also work) |
 | Click / hold and drag minimap | Move the camera; zoom is preserved |
@@ -87,7 +88,7 @@ pan_right = L
 
 Each `action = key, key` line replaces that action's bindings; omitted actions
 retain their defaults. Available actions are `pause`, `speed_up`, `speed_down`,
-`step`, `zoom_in`, `zoom_out`, `quit`, `toggle_chat`, `pan_up`, `pan_left`,
+`step`, `zoom_in`, `zoom_out`, `quit`, `toggle_chat`, `toggle_production`, `pan_up`, `pan_left`,
 `pan_down`, and `pan_right`. Use `none` to unbind an action. Up to four keys per action are
 supported; names are case-insensitive and `#` starts a comment.
 
@@ -142,6 +143,33 @@ The existing bitmap renderer replaces unsupported Unicode characters with `?`.
 There is no scrollback control yet. Very small windows hide the panel rather than
 covering the minimap.
 
+## Production and research
+
+The top-left panel keeps game time, speed/state and loop counts above a
+**Production + Research** section. Its **Hide / Show** button collapses only
+production; playback information stays visible. **P** toggles the same section
+(default binding; configurable with `toggle_production = F4`). The toggle ignores
+key repeats and also works while loading, paused and after replay end.
+
+Each player has a separate section. Unfinished units/structures, active training
+and production morphs use green progress bars; research uses purple bars and an
+`R:` label. Identical results share a row with up to three short bars (furthest
+along first), followed by `N more` for additional active entries. Zero-progress
+queued orders and completed jobs are excluded. Worker build commands do not
+count again beside their unfinished structures; eggs/cocoons and ongoing morphs
+are represented by their resulting unit when known.
+
+Training and upgrade names come from matching SC2 game data, with known ability
+names as fallbacks rather than guessed results. The panel uses the same owned
+observation as the displayed image, so pausing freezes it and completed,
+cancelled or destroyed entries disappear on the next observation. Missing
+production information for a perspective is not inferred.
+
+Panel height is bounded above the minimap/chat. Limited space is shared between
+players, prioritizing research, with per-player overflow summaries. Very small
+windows hide production rather than overlap other controls. Panel clicks and
+wheel events do not select units or zoom the camera underneath it.
+
 ## Unit orders (experimental)
 
 Click a visible unit to highlight its projected footprint and show a text box
@@ -176,7 +204,8 @@ there is no depth buffer for hiding arrows behind game geometry. Use
 See [camera measurements and limitations](docs/camera-projection.md).
 
 Images, camera commands, units and orders cross the worker/GUI boundary as one
-owned snapshot; chat remains an independent event FIFO. Projection never reads
+owned snapshot, including production progress and copied product names; chat
+remains an independent event FIFO. Projection never reads
 the worker's ahead-of-image camera request state.
 
 ## Options

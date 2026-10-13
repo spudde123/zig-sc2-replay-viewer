@@ -27,6 +27,7 @@ pub const Worker = struct {
     pending_chat: data.ChatQueue = .{},
     // Worker-only metadata; never borrowed by the GUI. Owned by runInner.
     terrain: ?observation_data.Terrain = null,
+    production_catalog: ?@import("production_catalog.zig").Catalog = null,
     players: data.Players = .{},
     failure: ?anyerror = null,
     ready: bool = false,
@@ -108,6 +109,11 @@ pub const Worker = struct {
         defer responses.deinit();
         var session = try sc2.ReplaySession.open(permanent.allocator(), self.io, self.config, responses.allocator());
         defer session.close();
+        self.production_catalog = try @import("production_catalog.zig").Catalog.init(self.allocator, try session.client.getGameData());
+        defer {
+            self.production_catalog.?.deinit(self.allocator);
+            self.production_catalog = null;
+        }
         const game_info = try session.client.getGameInfo();
         const mapping = minimap_mapping.Mapping.fromPlayable(if (game_info.start_raw) |raw| raw.playable_area else null, session.map_width, session.map_height);
         if (game_info.start_raw) |raw| {
@@ -189,6 +195,7 @@ pub const Worker = struct {
         const frame = try images.Frame.fromObservationWithContext(self.allocator, obs, status, .{
             .camera = .{ .x = camera.x, .y = camera.y, .distance = camera.distance },
             .terrain = if (self.terrain) |*terrain| terrain else null,
+            .production_catalog = if (self.production_catalog) |*catalog| catalog else null,
         });
         self.lock();
         const old = self.pending;
