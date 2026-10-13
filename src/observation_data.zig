@@ -74,6 +74,16 @@ pub fn capture(allocator: std.mem.Allocator, raw: ?p.ObservationRaw, context: Co
             .radius = unit.radius,
             .visible = unit.display_type == .visible and !unit.is_blip,
             .flying = unit.is_flying,
+            .health = unit.health,
+            .health_max = unit.health_max,
+            .shield = unit.shield,
+            .shield_max = unit.shield_max,
+            .energy = unit.energy,
+            .energy_max = unit.energy_max,
+            .mineral_contents = unit.mineral_contents,
+            .vespene_contents = unit.vespene_contents,
+            .assigned_harvesters = unit.assigned_harvesters,
+            .ideal_harvesters = unit.ideal_harvesters,
             .order_start = cursor,
             .order_count = unit.orders.len,
         };
@@ -133,6 +143,18 @@ test "scene owns flattened orders, names and neutral targets after response reus
     try std.testing.expectApproxEqAbs(@as(f32, 11.984314), scene.ordersFor(selected)[0].target.position.z.?, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 11.984314), scene.camera.?.target.z, 0.001);
     try std.testing.expect(scene.find(999) == null);
+}
+
+test "unit vitals, resources and harvester counts survive response reuse" {
+    const expected: p.Unit = .{ .tag = 20, .health = 75, .health_max = 100, .shield = 25, .shield_max = 50, .energy = 0, .energy_max = 200, .mineral_contents = 1500, .vespene_contents = 2250, .assigned_harvesters = 2, .ideal_harvesters = 3 };
+    var units = [_]p.Unit{expected};
+    const scene = try capture(std.testing.allocator, .{ .units = &units }, .{});
+    defer scene.deinit(std.testing.allocator);
+    units[0] = .{};
+    const selected = scene.find(20).?;
+    inline for (.{ "health", "health_max", "shield", "shield_max", "energy", "energy_max", "mineral_contents", "vespene_contents", "assigned_harvesters", "ideal_harvesters" }) |field| {
+        try std.testing.expectEqual(@field(expected, field), @field(selected.*, field));
+    }
 }
 
 test "terrain sampling validates bounds, bottom-left rows and owns bytes" {

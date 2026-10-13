@@ -55,17 +55,32 @@ pub fn draw(scene: *const data.Scene, selected_tag: ?u64, markers: bool, view: V
     const columns: usize = @intFromFloat(@floor((viewport.width - 36) / cell));
     const layout = orders.build(scene, unit, columns);
     const box_width = @as(f32, @floatFromInt(layout.columns)) * cell + 20;
-    const box_height = @as(f32, @floatFromInt(layout.count)) * cell + 16;
+    const box_height = @as(f32, @floatFromInt(layout.heightCells())) * cell + 16;
     const rect = boxRect(footprint.point, footprint.rx, footprint.ry, box_width, box_height, viewport, view.obstacles) orelse return .{};
     solid(.{ .x = rect.x - 1, .y = rect.y - 1, .width = rect.width + 2, .height = rect.height + 2 }, .{ 0.2, 0.6, 0.3 });
     solid(rect, .{ 0.035, 0.06, 0.045 });
     text.font(1);
     text.canvas(view.window_width * 8 / cell, view.window_height * 8 / cell);
+    var row_y = rect.y + 8;
     for (layout.lines[0..layout.count], 0..) |*row, i| {
-        text.origin((rect.x + 10) / cell, (rect.y + 8 + @as(f32, @floatFromInt(i)) * cell) / cell);
+        if (layout.bars[i]) |bar| {
+            const track: Rect = .{ .x = rect.x + 10, .y = row_y + cell + 1, .width = rect.width - 20, .height = 5 };
+            solid(track, .{ 0.12, 0.16, 0.14 });
+            if (bar.fraction > 0) {
+                var fill = track;
+                fill.width *= bar.fraction;
+                solid(fill, switch (bar.kind) {
+                    .health => .{ 0.3, 0.85, 0.35 },
+                    .shield => .{ 0.3, 0.65, 1 },
+                    .energy => .{ 0.75, 0.4, 1 },
+                });
+            }
+        }
+        text.origin((rect.x + 10) / cell, row_y / cell);
         text.home();
         text.color3b(if (i < 2) 150 else 235, if (i < 2) 240 else 235, if (i < 2) 170 else 235);
         text.puts(std.mem.sliceTo(row, 0));
+        row_y += if (layout.bars[i] != null) 2 * cell else cell;
     }
     return rect;
 }

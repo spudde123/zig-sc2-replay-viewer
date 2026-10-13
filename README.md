@@ -152,6 +152,13 @@ progress but no arrow. Missing or hidden targets are marked unavailable rather
 than drawing toward stale positions. “No orders reported” does not prove the
 unit is idle; the API may omit orders for a perspective.
 
+The details box includes green HP, blue shield, and purple energy bars with
+current/max values when a positive maximum is reported. Empty applicable bars
+remain visible. Positive mineral/vespene contents are shown as integers, and
+units with `ideal_harvesters > 0` show `Harvesters: assigned / ideal`. These
+values update with the displayed observation, including while paused after a
+camera refresh.
+
 Selection follows the unit tag across frames, pan and zoom. Right-click or click
 empty game space to clear it; losing the unit/vision also clears selection.
 Selection works while paused and at replay end, and never sends game commands.
