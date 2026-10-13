@@ -26,7 +26,7 @@ pub const usage =
     \\  --quit-after SECONDS  Automatically close window (smoke testing)
     \\Optional keybinds.conf in the working directory overrides keyboard controls.
     \\Default keys: Space pause; Up/Down or [ / ] speed; Right step paused; Escape quit.
-    \\Click minimap to move the camera. WASD pans; mouse wheel or +/- zooms.
+    \\Click/drag minimap to move the camera. WASD pans; mouse wheel or +/- zooms.
     \\
 ;
 

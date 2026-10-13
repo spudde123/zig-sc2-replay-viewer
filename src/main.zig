@@ -23,6 +23,7 @@ const App = struct {
     failed: bool = false,
     pan: @import("camera_pan.zig").Pan = .{},
     bindings: keybinds.Keybinds = .{},
+    minimap_drag: @import("minimap_drag.zig").Drag = .{},
 
     fn fromUserdata(ptr: ?*anyopaque) *App {
         return @ptrCast(@alignCast(ptr.?));
@@ -41,7 +42,7 @@ const App = struct {
         const dt = sokol.app.frameDuration();
         self.elapsed += dt;
         self.worker.lock();
-        if (self.worker.ready and !self.worker.ended) {
+        if (self.worker.ready and !self.worker.ended and !self.minimap_drag.active) {
             var camera = self.worker.requested_camera orelse self.worker.camera;
             if (self.pan.apply(&camera, dt, self.worker.map_width, self.worker.map_height)) {
                 self.worker.requested_camera = camera;
@@ -81,6 +82,16 @@ const App = struct {
         if (ev.*.type == .UNFOCUSED) {
             // Key releases may be delivered elsewhere after losing focus.
             self.pan.clear();
+            self.minimap_drag.end();
+            return;
+        }
+        if (ev.*.type == .MOUSE_UP and ev.*.mouse_button == .LEFT) {
+            self.minimap_drag.end();
+            return;
+        }
+        if (ev.*.type == .MOUSE_LEAVE) {
+            // Avoid a stuck drag if the release happens outside this window.
+            self.minimap_drag.end();
             return;
         }
         if (ev.*.type == .KEY_DOWN or ev.*.type == .KEY_UP) {
@@ -114,11 +125,12 @@ const App = struct {
         } else if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .LEFT and self.worker.ready and !self.worker.ended) {
             // Sokol mouse coordinates and framebuffer coordinates are both physical pixels.
             const rect = self.renderer.minimap_rect;
-            if (rect.contains(ev.*.mouse_x, ev.*.mouse_y)) {
-                self.worker.requestPosition(
-                    (ev.*.mouse_x - rect.x) / rect.width * self.worker.map_width,
-                    (1 - (ev.*.mouse_y - rect.y) / rect.height) * self.worker.map_height,
-                );
+            if (self.minimap_drag.begin(rect, ev.*.mouse_x, ev.*.mouse_y)) |point| {
+                self.worker.requestPosition(point.x * self.worker.map_width, point.y * self.worker.map_height);
+            }
+        } else if (ev.*.type == .MOUSE_MOVE) {
+            if (self.minimap_drag.update(self.renderer.minimap_rect, ev.*.mouse_x, ev.*.mouse_y)) |point| {
+                self.worker.requestPosition(point.x * self.worker.map_width, point.y * self.worker.map_height);
             }
         }
     }

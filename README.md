@@ -63,7 +63,7 @@ SC2 cannot download maps automatically.
 | Right Arrow | Advance one simulation loop while paused |
 | Hold WASD | Smooth camera pan; combine keys for diagonals |
 | Mouse wheel / `+` / `-` | Zoom in/out (keypad `+` / `-` also work) |
-| Click minimap | Move the camera |
+| Click / hold and drag minimap | Move the camera; zoom is preserved |
 | Escape / close window / Ctrl+C | Exit and clean up SC2 |
 
 ### Custom keybinds
@@ -94,7 +94,10 @@ Key names follow Sokol's keycodes: letters, digits, `SPACE`, `ESCAPE`, `ENTER`,
 `+`/`=` alias `EQUAL`, `-` aliases `MINUS`, and `[`/`]` alias the bracket keys.
 These are keycodes, not typed characters; keyboard-layout differences may apply.
 Modifier combinations such as `Ctrl+P` are not supported. Mouse-wheel zoom and
-left-click minimap navigation remain fixed.
+left-click minimap navigation remain fixed. Hold the left button and drag to
+follow the pointer; dragging outside the minimap clamps to its edges. Releasing
+the button, leaving the window, or losing focus stops dragging. Minimap dragging
+takes priority over held keyboard pan keys.
 
 If the file is missing, defaults are used silently. An unreadable or invalid file
 (including unknown names, duplicate actions, conflicting keys after merging with
