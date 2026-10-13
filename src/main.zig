@@ -26,7 +26,7 @@ const App = struct {
     bindings: keybinds.Keybinds = .{},
     minimap_drag: @import("input/minimap_drag.zig").Drag = .{},
     chat: @import("replay/replay_data.zig").ChatQueue = .{},
-    chat_visible: bool = true,
+    chat_visible: bool = false,
     production_visible: bool = true,
     selected_tag: ?u64 = null,
 

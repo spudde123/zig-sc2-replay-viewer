@@ -16,7 +16,7 @@ const stats_view = @import("player_stats_view.zig");
 pub const Overlay = struct {
     players: *const data.Players,
     chat: *const data.ChatQueue,
-    chat_visible: bool = true,
+    chat_visible: bool = false,
     production_visible: bool = true,
     selected_tag: ?u64 = null,
     projection_markers: bool = false,

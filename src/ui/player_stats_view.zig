@@ -41,7 +41,7 @@ pub fn build(players: *const data.Players, stats: data.PlayerStats, rows: usize)
             layout.add(std.fmt.bufPrint(&buffer, "M: {d}  V: {d}  Supply: {s} / {s}", .{ s.minerals, s.vespene, used_text, cap_text }) catch unreachable);
         } else {
             layout.add(name);
-            layout.add(if (stats.available) "Waiting for first stat sample" else "Replay statistics unavailable");
+            layout.add(if (stats.available) "Waiting for first stat sample" else "Unavailable");
         }
         shown += 1;
     }
@@ -66,7 +66,7 @@ test "stats formatting shows player names, fractional supply, missing data and b
     try std.testing.expectEqualStrings("M: 123  V: 55  Supply: 13.5 / 200", std.mem.sliceTo(&layout.lines[1], 0));
     try std.testing.expectEqualStrings("Waiting for first stat sample", std.mem.sliceTo(&layout.lines[3], 0));
     const unavailable = build(&players, .{}, 10);
-    try std.testing.expectEqualStrings("Replay statistics unavailable", std.mem.sliceTo(&unavailable.lines[1], 0));
+    try std.testing.expectEqualStrings("Unavailable", std.mem.sliceTo(&unavailable.lines[1], 0));
     try std.testing.expectEqual(@as(usize, 0), build(&players, stats, 0).count);
     try std.testing.expectEqualStrings("2 players not shown", std.mem.sliceTo(&build(&players, stats, 1).lines[0], 0));
 }
