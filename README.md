@@ -197,7 +197,7 @@ players, prioritizing research, with per-player overflow summaries. Very small
 windows hide production rather than overlap other controls. Panel clicks and
 wheel events do not select units or zoom the camera underneath it.
 
-## Unit orders (experimental)
+## Unit orders
 
 Click a visible unit to highlight its projected footprint and show a text box
 with its unit type, tag, owner and first reported order. Only that order's target
@@ -220,15 +220,6 @@ Selection works while paused and at replay end, and never sends game commands.
 HUD/chat/minimap controls take priority over game-image picking. The order box
 tries to stay near its unit without covering UI panels; it hides on cramped
 windows or when its unit is offscreen.
-
-Projection is an empirical Linux SC2 4.10 observer camera model, calibrated with
-flat-ground image correspondences at several zoom/pan settings. It uses 3D unit
-positions and terrain height, then the exact displayed image rectangle. Picking
-uses approximate footprints, not mesh silhouettes. Map-edge camera clamping,
-ramps, flying/model offsets and nonzero perspectives need further validation;
-there is no depth buffer for hiding arrows behind game geometry. Use
-`--projection-markers` to display cyan raw-position anchors for checking alignment.
-See [camera measurements and limitations](docs/camera-projection.md).
 
 Images, camera commands, units and orders cross the worker/GUI boundary as one
 owned snapshot, including production progress and copied product names; chat
@@ -256,7 +247,7 @@ the worker's ahead-of-image camera request state.
 
 Changing perspective requires restarting the viewer. Seeking, automatic camera
 following, audio, and a full replay HUD are not implemented. SC2 can silently
-clamp camera requests near map edges; local projection there remains experimental.
+clamp camera requests near map edges.
 
 ## GitHub builds and releases
 
