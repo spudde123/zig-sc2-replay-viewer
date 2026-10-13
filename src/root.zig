@@ -12,4 +12,6 @@ test {
     _ = @import("camera_pan.zig");
     _ = @import("keybinds.zig");
     _ = @import("minimap_drag.zig");
+    _ = @import("replay_data.zig");
+    _ = @import("chat_view.zig");
 }

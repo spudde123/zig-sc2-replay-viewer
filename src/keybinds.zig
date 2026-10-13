@@ -14,6 +14,7 @@ pub const Action = enum {
     pan_left,
     pan_down,
     pan_right,
+    toggle_chat,
 
     pub fn isPan(self: Action) bool {
         return switch (self) {
@@ -54,6 +55,7 @@ pub const Keybinds = struct {
         binding(&.{.A}),
         binding(&.{.S}),
         binding(&.{.D}),
+        binding(&.{.C}),
     },
 
     pub fn keys(self: *const Keybinds, action: Action) []const Keycode {
@@ -76,11 +78,11 @@ pub const Keybinds = struct {
     }
 
     pub fn formatHints(self: *const Keybinds, buffer: []u8) std.mem.PrintError![]const u8 {
-        return std.fmt.bufPrint(buffer, "{s} pause | {s}/{s} speed | {s}/{s}/{s}/{s} pan\nWheel or {s}/{s} zoom | {s} step | {s} quit", .{
+        return std.fmt.bufPrint(buffer, "{s} pause | {s}/{s} speed | {s}/{s}/{s}/{s} pan\nWheel or {s}/{s} zoom | {s} step | {s} quit | {s} chat", .{
             self.primaryName(.pause),     self.primaryName(.speed_up), self.primaryName(.speed_down),
             self.primaryName(.pan_up),    self.primaryName(.pan_left), self.primaryName(.pan_down),
             self.primaryName(.pan_right), self.primaryName(.zoom_in),  self.primaryName(.zoom_out),
-            self.primaryName(.step),      self.primaryName(.quit),
+            self.primaryName(.step),      self.primaryName(.quit),     self.primaryName(.toggle_chat),
         });
     }
 };
@@ -178,6 +180,21 @@ test "partial overrides, aliases, comments, CRLF and disabling preserve other de
     try std.testing.expect(std.mem.startsWith(u8, try config.formatHints(&hints), "P pause"));
     const digits = try parse("pause = 1\n");
     try std.testing.expectEqual(Action.pause, digits.actionFor(._1).?);
+}
+
+test "chat toggle has a configurable default, can be disabled and ignores repeat" {
+    const defaults: Keybinds = .{};
+    try std.testing.expectEqual(Action.toggle_chat, defaults.actionFor(.C).?);
+    try std.testing.expect(!Action.toggle_chat.acceptsRepeat());
+    const custom = try parse("toggle_chat = F4, TAB\n");
+    try std.testing.expectEqual(Action.toggle_chat, custom.actionFor(.F4).?);
+    try std.testing.expectEqual(Action.toggle_chat, custom.actionFor(.TAB).?);
+    try std.testing.expect(custom.actionFor(.C) == null);
+    var hints: [512]u8 = undefined;
+    try std.testing.expect(std.mem.endsWith(u8, try custom.formatHints(&hints), "F4 chat"));
+    const disabled = try parse("toggle_chat = none\n");
+    try std.testing.expect(disabled.actionFor(.C) == null);
+    try std.testing.expectError(error.DuplicateKey, parse("toggle_chat = SPACE\n"));
 }
 
 test "malformed or ambiguous files fall back to the complete default set" {

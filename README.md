@@ -61,6 +61,7 @@ SC2 cannot download maps automatically.
 | Space | Pause/resume |
 | Up / Down (also `]` / `[`) | Faster/slower: 0.25x–16x |
 | Right Arrow | Advance one simulation loop while paused |
+| C | Show/hide chat |
 | Hold WASD | Smooth camera pan; combine keys for diagonals |
 | Mouse wheel / `+` / `-` | Zoom in/out (keypad `+` / `-` also work) |
 | Click / hold and drag minimap | Move the camera; zoom is preserved |
@@ -84,8 +85,8 @@ pan_right = L
 
 Each `action = key, key` line replaces that action's bindings; omitted actions
 retain their defaults. Available actions are `pause`, `speed_up`, `speed_down`,
-`step`, `zoom_in`, `zoom_out`, `quit`, `pan_up`, `pan_left`, `pan_down`, and
-`pan_right`. Use `none` to unbind an action. Up to four keys per action are
+`step`, `zoom_in`, `zoom_out`, `quit`, `toggle_chat`, `pan_up`, `pan_left`,
+`pan_down`, and `pan_right`. Use `none` to unbind an action. Up to four keys per action are
 supported; names are case-insensitive and `#` starts a comment.
 
 Key names follow Sokol's keycodes: letters, digits, `SPACE`, `ESCAPE`, `ENTER`,
@@ -103,11 +104,10 @@ If the file is missing, defaults are used silently. An unreadable or invalid fil
 (including unknown names, duplicate actions, conflicting keys after merging with
 defaults, or files exceeding the 16 KiB read limit) falls back to **all defaults**
 with a warning. To move a key to another action, also rebind or disable its old
-action. Changes take effect after restarting. The HUD displays the first active
-key for each action; `--help` lists the defaults.
+action. Changes take effect after restarting; `--help` lists the defaults.
 
 The upper-left HUD shows game time / duration as `mm:ss`, playback speed and
-state, loop counts, and control hints. The window title stays static.
+state, and loop counts. Keybind hints are not displayed. The window title stays static.
 Time is derived from the displayed frame's loop count at 22.4 loops per second,
 not wall-clock time. Minutes continue past 59 for long replays. `1x` playback
 targets that same loop rate; actual speed depends on rendering performance.
@@ -118,6 +118,26 @@ unit if no base is available). These white labels identify ownership without
 assuming SC2's rendered color mapping, including in mirror matchups. Players
 whose starting units are not visible have no marker. Placement is approximate
 on padded/non-square minimaps; names use the HUD's ASCII bitmap font.
+
+## Chat
+
+A bottom-right panel shows replay chat with player names and game times.
+Press **C** or click **Hide chat / Show chat** below the panel to toggle its
+visibility (shown by default). Rebind it with `toggle_chat = F4` in `keybinds.conf`. Hiding it does not stop message collection or clear recent history.
+The button also works while loading, paused, and at replay end; visibility is
+local to the GUI and resets when the viewer restarts.
+Messages stay visible while paused and at replay end. Unknown names fall back to
+`Player N` (or `Unknown` if the sender ID is missing). Times use the observation
+that delivered the message; SC2 does not provide exact chat event timestamps.
+
+The panel wraps text, showing the newest 12 lines and at most three lines per
+message; longer text ends in `...`. Recent history and the worker's independent
+chat queue each hold 128 messages. Overflow retains the newest messages and marks
+its header `Chat *`. Message text is copied before SC2 response memory resets,
+bounded to 512 bytes, and is not lost when newer images replace pending frames.
+The existing bitmap renderer replaces unsupported Unicode characters with `?`.
+There is no scrollback control yet. Very small windows hide the panel rather than
+covering the minimap.
 
 ## Options
 
@@ -177,17 +197,23 @@ zig build run -- \
 ```
 
 `--quit-after SECONDS` automatically exits the GUI for smoke testing. Captures
-save SC2's main image, not the viewer's HUD or minimap layout.
+save SC2's main image, not the viewer's HUD, chat, or minimap layout.
 
 ## Structure
 
 - `lib/zig-sc2`: submodule containing the protocol/client and `ReplaySession`
   process/version lifecycle. Replay operations are `observe()`, `advance()`,
   and `close()`; the existing bot runner retains its defaults.
-- `src/replay_worker.zig`: owns SC2 I/O on a worker, playback timing, and a
-  bounded frame mailbox. Image bytes are copied before response memory resets.
-- `src/renderer.zig`: owns Sokol textures, the minimap, and the playback HUD
-  on the GUI thread.
+- `src/replay_worker.zig`: owns SC2 I/O, playback timing, a latest-frame mailbox,
+  and a separate FIFO chat queue. Chat is collected from every observation,
+  including initialization and camera-only observations.
+- `src/replay_data.zig`: value-owned player metadata, chat messages, and bounded
+  event queues, independent of protocol and rendering types. Future unit data
+  should travel with its matching observation/frame snapshot, not the chat FIFO.
+- `src/chat_view.zig`: presentation-only chat formatting and wrapping.
+- `src/renderer.zig`: owns Sokol textures, the minimap, playback HUD, and chat
+  panel on the GUI thread. The GUI owns recent chat history; it does not retain
+  SC2 response pointers. No unit-data display is implemented yet.
 - `src/cli.zig`, `src/playback.zig`, `src/image.zig`: argument parsing, stepping
   and time formatting, and image conversion/ownership.
 

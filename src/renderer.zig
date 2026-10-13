@@ -6,6 +6,14 @@ const text = sokol.debugtext;
 const formatGameTime = @import("playback.zig").formatGameTime;
 const Image = @import("image.zig").Image;
 const Frame = @import("image.zig").Frame;
+const data = @import("replay_data.zig");
+const chat_view = @import("chat_view.zig");
+
+pub const Overlay = struct {
+    players: *const data.Players,
+    chat: *const data.ChatQueue,
+    chat_visible: bool = true,
+};
 
 pub const Rect = struct {
     x: f32 = 0,
@@ -55,7 +63,6 @@ const Texture = struct {
 pub const Hud = struct {
     duration_loops: u32 = 0,
     labels: @import("player_labels.zig").Labels = .{},
-    bindings: @import("keybinds.zig").Keybinds = .{},
     speed: f64 = 1,
     state: enum { loading, playing, paused, ended } = .loading,
 
@@ -64,9 +71,7 @@ pub const Hud = struct {
         var duration_buffer: [16]u8 = undefined;
         const current = try formatGameTime(&current_buffer, game_loop);
         const duration = try formatGameTime(&duration_buffer, self.duration_loops);
-        var hints_buffer: [512]u8 = undefined;
-        const hints = try self.bindings.formatHints(&hints_buffer);
-        return std.mem.printSentinel(buffer, "{s} / {s} | {d}x | {s}\nLoop {d} / {d}\n{s}", .{ current, duration, self.speed, @tagName(self.state), game_loop, self.duration_loops, hints }, 0);
+        return std.mem.printSentinel(buffer, "{s} / {s} | {d}x | {s}\nLoop {d} / {d}", .{ current, duration, self.speed, @tagName(self.state), game_loop, self.duration_loops }, 0);
     }
 };
 
@@ -75,6 +80,7 @@ pub const Renderer = struct {
     minimap: Texture = .{},
     sampler: gfx.Sampler = .{},
     minimap_rect: Rect = .{},
+    chat_button_rect: Rect = .{},
 
     pub fn init() Renderer {
         gfx.setup(.{ .environment = sokol.glue.environment(), .logger = .{ .func = sokol.log.func } });
@@ -83,6 +89,9 @@ pub const Renderer = struct {
             .fonts = blk: {
                 var fonts: [8]text.FontDesc = @splat(.{});
                 fonts[0] = text.fontOric();
+                // Chat needs ordinary ASCII punctuation (not Oric's currency
+                // glyph in the underscore slot used by bot diagnostic tags).
+                fonts[1] = text.fontCpc();
                 break :blk fonts;
             },
             .logger = .{ .func = sokol.log.func },
@@ -104,7 +113,7 @@ pub const Renderer = struct {
         gfx.shutdown();
     }
 
-    pub fn draw(self: *Renderer, frame: ?Frame, hud: Hud) void {
+    pub fn draw(self: *Renderer, frame: ?Frame, hud: Hud, overlay: Overlay) void {
         const width: f32 = @floatFromInt(sokol.app.width());
         const height: f32 = @floatFromInt(sokol.app.height());
         gl.defaults();
@@ -139,12 +148,15 @@ pub const Renderer = struct {
         const hud_right = 12 + @as(f32, @floatFromInt(columns)) * cell_size + 16;
         const hud_bottom = 12 + @as(f32, @floatFromInt(lines)) * cell_size + 16;
         solidRect(.{ .x = 12, .y = 12, .width = hud_right - 12, .height = hud_bottom - 12 }, .{ 0, 0, 0 });
+        text.font(0);
         text.canvas(width * 8 / cell_size, height * 8 / cell_size);
         text.origin(20 / cell_size, 20 / cell_size);
         text.home();
         text.color3b(255, 255, 255);
         text.puts(label);
         if (self.minimap_rect.width > 0) self.drawPlayerLabels(hud.labels, width, height);
+        if (overlay.chat_visible) self.drawChat(overlay, width, height);
+        self.drawChatButton(overlay.chat_visible, width, height);
         gfx.beginPass(.{
             .swapchain = sokol.glue.swapchain(),
             .action = .{ .colors = blk: {
@@ -181,6 +193,50 @@ pub const Renderer = struct {
         }
     }
 
+    fn drawChat(self: *Renderer, overlay: Overlay, width: f32, height: f32) void {
+        const rect = chatRect(width, height, self.minimap_rect);
+        if (rect.width == 0) return;
+        const cell: f32 = 12;
+        const columns: usize = @intFromFloat(@floor((rect.width - 20) / cell));
+        const rows: usize = @intFromFloat(@floor((rect.height - 40) / cell));
+        const layout = chat_view.build(overlay.chat, overlay.players, columns, rows);
+        solidRect(.{ .x = rect.x - 1, .y = rect.y - 1, .width = rect.width + 2, .height = rect.height + 2 }, .{ 0.2, 0.23, 0.28 });
+        solidRect(rect, .{ 0.04, 0.05, 0.07 });
+        text.font(1);
+        text.canvas(width * 8 / cell, height * 8 / cell);
+        text.origin((rect.x + 10) / cell, (rect.y + 8) / cell);
+        text.home();
+        text.color3b(170, 200, 230);
+        text.puts(if (overlay.chat.omitted > 0) "Chat *" else "Chat");
+        text.color3b(235, 235, 235);
+        if (layout.count == 0) {
+            text.origin((rect.x + 10) / cell, (rect.y + 32) / cell);
+            text.home();
+            text.puts(if (columns >= 16) "No messages yet." else "(empty)");
+        } else {
+            for (layout.lines[0..layout.count], 0..) |*line, i| {
+                text.origin((rect.x + 10) / cell, (rect.y + 32 + @as(f32, @floatFromInt(i)) * cell) / cell);
+                text.home();
+                text.puts(std.mem.sliceTo(&line.bytes, 0));
+            }
+        }
+    }
+
+    fn drawChatButton(self: *Renderer, visible: bool, width: f32, height: f32) void {
+        self.chat_button_rect = chatButtonRect(width, height);
+        const rect = self.chat_button_rect;
+        if (rect.width == 0) return;
+        solidRect(.{ .x = rect.x - 1, .y = rect.y - 1, .width = rect.width + 2, .height = rect.height + 2 }, if (visible) .{ 0.35, 0.55, 0.7 } else .{ 0.2, 0.23, 0.28 });
+        solidRect(rect, .{ 0.08, 0.12, 0.17 });
+        const cell: f32 = 12;
+        text.font(1);
+        text.canvas(width * 8 / cell, height * 8 / cell);
+        text.origin((rect.x + 12) / cell, (rect.y + 8) / cell);
+        text.home();
+        text.color3b(235, 235, 235);
+        text.puts(if (visible) "Hide chat" else "Show chat");
+    }
+
     fn solidRect(rect: Rect, color: [3]f32) void {
         gl.disableTexture();
         gl.c4f(color[0], color[1], color[2], 1);
@@ -205,11 +261,51 @@ pub const Renderer = struct {
     }
 };
 
+/// Keep the passive chat panel beside the minimap, never over its controls.
+fn chatRect(width: f32, height: f32, minimap: Rect) Rect {
+    const left = if (minimap.width > 0) minimap.x + minimap.width + 12 else 12;
+    const panel_width = @min(480, width - left - 12);
+    const panel_height = @min(200, height * 0.32);
+    if (panel_width < 160 or panel_height < 72) return .{};
+    // Reserve the bottom row for the always-available visibility button.
+    return .{ .x = width - panel_width - 12, .y = height - panel_height - 52, .width = panel_width, .height = panel_height };
+}
+
+fn chatButtonRect(width: f32, height: f32) Rect {
+    // Below this size there is no usable space beside the minimap / below HUD.
+    if (width < 240 or height < 140) return .{};
+    return .{ .x = width - 144, .y = height - 40, .width = 132, .height = 28 };
+}
+
+test "chat button stays inside the window, outside chat and minimap" {
+    const minimap: Rect = .{ .x = 12, .y = 528, .width = 180, .height = 180 };
+    const panel = chatRect(960, 720, minimap);
+    const button = chatButtonRect(960, 720);
+    try std.testing.expect(button.x > minimap.x + minimap.width);
+    try std.testing.expect(button.y >= panel.y + panel.height + 12);
+    try std.testing.expect(button.x + button.width <= 960);
+    try std.testing.expect(button.y + button.height <= 720);
+    try std.testing.expect(button.contains(850, 690));
+    try std.testing.expect(!button.contains(800, 690));
+    try std.testing.expectEqual(@as(f32, 0), chatButtonRect(200, 720).width);
+    try std.testing.expectEqual(@as(f32, 0), chatButtonRect(960, 100).width);
+}
+
+test "chat panel fits beside the minimap and hides rather than overlapping on tiny windows" {
+    const minimap: Rect = .{ .x = 12, .y = 528, .width = 180, .height = 180 };
+    const rect = chatRect(960, 720, minimap);
+    try std.testing.expect(rect.x >= minimap.x + minimap.width + 12);
+    try std.testing.expect(rect.x + rect.width <= 960);
+    try std.testing.expect(rect.y + rect.height <= 720);
+    try std.testing.expectEqual(@as(f32, 0), chatRect(320, 720, minimap).width);
+    try std.testing.expectEqual(@as(f32, 0), chatRect(960, 100, minimap).width);
+}
+
 test "HUD shows frame time, duration, speed, state and loop counts" {
     var buffer: [512]u8 = undefined;
     const hud: Hud = .{ .duration_loops = 14884, .speed = 0.25, .state = .paused };
     try std.testing.expectEqualStrings(
-        "01:00 / 11:04 | 0.25x | paused\nLoop 1344 / 14884\nSPACE pause | UP/DOWN speed | W/A/S/D pan\nWheel or EQUAL/MINUS zoom | RIGHT step | ESCAPE quit",
+        "01:00 / 11:04 | 0.25x | paused\nLoop 1344 / 14884",
         try hud.format(&buffer, 1344),
     );
     const loading: Hud = .{};

@@ -3,6 +3,7 @@ const sc2 = @import("zig-sc2");
 const images = @import("image.zig");
 const Playback = @import("playback.zig").Playback;
 const player_labels = @import("player_labels.zig");
+const data = @import("replay_data.zig");
 
 pub const Camera = struct {
     x: f32,
@@ -21,6 +22,8 @@ pub const Worker = struct {
     initial_distance: f32 = 40,
     mutex: std.Io.Mutex = .init,
     pending: ?images.Frame = null,
+    pending_chat: data.ChatQueue = .{},
+    players: data.Players = .{},
     failure: ?anyerror = null,
     ready: bool = false,
     ended: bool = false,
@@ -60,11 +63,14 @@ pub const Worker = struct {
         self.requested_camera = camera;
     }
 
-    pub fn takeFrame(self: *Worker) ?images.Frame {
+    /// Atomically take the latest image and all queued events. Image replacement
+    /// is allowed, but chat is retained independently until the GUI drains it.
+    pub fn takeFrameAndChat(self: *Worker, history: *data.ChatQueue) ?images.Frame {
         self.lock();
         defer self.unlock();
         const frame = self.pending;
         self.pending = null;
+        self.pending_chat.drainInto(history);
         return frame;
     }
 
@@ -89,7 +95,19 @@ pub const Worker = struct {
         defer responses.deinit();
         var session = try sc2.ReplaySession.open(permanent.allocator(), self.io, self.config, responses.allocator());
         defer session.close();
+        var players: data.Players = .{};
+        for (session.players[0..session.player_count]) |player| {
+            players.add(player.id, std.mem.sliceTo(&player.name, 0));
+        }
+        self.lock();
+        self.players = players;
+        self.unlock();
         var obs = try session.observe();
+        // This first observation is used for camera placement, not displayed,
+        // but any chat it contains must still survive the response arena reset.
+        self.lock();
+        appendChat(&self.pending_chat, obs);
+        self.unlock();
         const labels = player_labels.capture(session.players[0..session.player_count], obs, session.map_width, session.map_height);
         var camera = initialCamera(obs, session.map_width, session.map_height);
         camera.distance = self.initial_distance;
@@ -147,12 +165,35 @@ pub const Worker = struct {
         const frame = try images.Frame.fromObservation(self.allocator, obs, status);
         self.lock();
         const old = self.pending;
+        appendChat(&self.pending_chat, obs);
         self.pending = frame;
         self.ended = frame.ended;
         self.unlock();
         if (old) |f| f.deinit(self.allocator);
     }
 };
+
+fn appendChat(queue: *data.ChatQueue, obs: sc2.sc2p.ResponseObservation) void {
+    const loop = if (obs.observation) |o| o.game_loop orelse 0 else 0;
+    for (obs.chat orelse &.{}) |message| {
+        queue.push(data.ChatMessage.init(message.player_id orelse 0, loop, message.message orelse ""));
+    }
+}
+
+test "observation chat is copied before reset, including initial and empty messages" {
+    var queue: data.ChatQueue = .{};
+    var text_bytes = [_]u8{ 'g', 'l', 'h', 'f' };
+    var initial = [_]sc2.sc2p.ChatReceived{.{ .player_id = 1, .message = &text_bytes }};
+    appendChat(&queue, .{ .observation = .{ .game_loop = 0 }, .chat = &initial });
+    @memset(&text_bytes, 'x');
+    var later = [_]sc2.sc2p.ChatReceived{ .{ .player_id = 2, .message = "hi" }, .{} };
+    appendChat(&queue, .{ .observation = .{ .game_loop = 32 }, .chat = &later });
+    try std.testing.expectEqual(@as(usize, 3), queue.count);
+    try std.testing.expectEqualStrings("glhf", queue.at(0).text());
+    try std.testing.expectEqual(@as(u32, 32), queue.at(1).game_loop);
+    try std.testing.expectEqual(@as(u32, 0), queue.at(2).player_id);
+    try std.testing.expectEqualStrings("", queue.at(2).text());
+}
 
 pub fn initialCamera(obs: sc2.sc2p.ResponseObservation, width: f32, height: f32) Camera {
     if (obs.observation) |observation| {
@@ -170,6 +211,30 @@ pub fn initialCamera(obs: sc2.sc2p.ResponseObservation, width: f32, height: f32)
         }
     }
     return .{ .x = width / 2, .y = height / 2 };
+}
+
+test "replacing image frames does not replace queued chat" {
+    var worker: Worker = .{ .io = std.testing.io, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" } };
+    defer worker.deinit();
+    var history: data.ChatQueue = .{};
+    var pixels = [_]u8{ 10, 20, 30 };
+    var messages = [_]sc2.sc2p.ChatReceived{.{ .player_id = 1, .message = "first" }};
+    var obs: sc2.sc2p.ResponseObservation = .{
+        .observation = .{ .game_loop = 1, .render = .{ .map = .{ .bits_per_pixel = 24, .size = .{ .x = 1, .y = 1 }, .image = &pixels } } },
+        .chat = &messages,
+    };
+    try worker.publish(obs, .in_replay);
+    messages[0].message = "second";
+    obs.observation.?.game_loop = 2;
+    try worker.publish(obs, .in_replay);
+    const frame = worker.takeFrameAndChat(&history).?;
+    defer frame.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(u32, 2), frame.game_loop);
+    try std.testing.expectEqual(@as(usize, 2), history.count);
+    try std.testing.expectEqualStrings("first", history.at(0).text());
+    try std.testing.expectEqualStrings("second", history.at(1).text());
+    try std.testing.expect(worker.takeFrameAndChat(&history) == null);
+    try std.testing.expectEqual(@as(usize, 2), history.count);
 }
 
 test "minimap positioning preserves current and pending zoom before scrolling" {

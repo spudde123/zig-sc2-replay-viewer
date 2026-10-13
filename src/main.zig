@@ -24,6 +24,8 @@ const App = struct {
     pan: @import("camera_pan.zig").Pan = .{},
     bindings: keybinds.Keybinds = .{},
     minimap_drag: @import("minimap_drag.zig").Drag = .{},
+    chat: @import("replay_data.zig").ChatQueue = .{},
+    chat_visible: bool = true,
 
     fn fromUserdata(ptr: ?*anyopaque) *App {
         return @ptrCast(@alignCast(ptr.?));
@@ -35,7 +37,7 @@ const App = struct {
 
     fn frame(ptr: ?*anyopaque) callconv(.c) void {
         const self = fromUserdata(ptr);
-        if (self.worker.takeFrame()) |next| {
+        if (self.worker.takeFrameAndChat(&self.chat)) |next| {
             if (self.current) |old| old.deinit(self.worker.allocator);
             self.current = next;
         }
@@ -55,6 +57,7 @@ const App = struct {
         const paused = self.worker.playback.paused;
         const duration = self.worker.duration;
         const labels = self.worker.labels;
+        const players = self.worker.players;
         self.worker.unlock();
         if (interrupted.load(.acquire)) sokol.app.requestQuit();
         if (failure != null) {
@@ -67,10 +70,9 @@ const App = struct {
         self.renderer.draw(self.current, .{
             .duration_loops = duration,
             .labels = labels,
-            .bindings = self.bindings,
             .speed = speed,
             .state = if (ended) .ended else if (!ready) .loading else if (paused) .paused else .playing,
-        });
+        }, .{ .players = &players, .chat = &self.chat, .chat_visible = self.chat_visible });
     }
 
     fn cleanup(ptr: ?*anyopaque) callconv(.c) void {
@@ -79,6 +81,14 @@ const App = struct {
 
     fn event(ev: [*c]const sokol.app.Event, ptr: ?*anyopaque) callconv(.c) void {
         const self = fromUserdata(ptr);
+        // GUI-only controls work while loading, paused, and after replay end.
+        // Consume the click before it can reach camera/minimap handling.
+        if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .LEFT and
+            self.renderer.chat_button_rect.contains(ev.*.mouse_x, ev.*.mouse_y))
+        {
+            self.chat_visible = !self.chat_visible;
+            return;
+        }
         if (ev.*.type == .UNFOCUSED) {
             // Key releases may be delivered elsewhere after losing focus.
             self.pan.clear();
@@ -96,6 +106,10 @@ const App = struct {
         }
         if (ev.*.type == .KEY_DOWN or ev.*.type == .KEY_UP) {
             if (self.pan.setKey(ev.*.key_code, ev.*.type == .KEY_DOWN)) return;
+        }
+        if (ev.*.type == .KEY_DOWN and self.bindings.actionFor(ev.*.key_code) == .toggle_chat) {
+            if (!ev.*.key_repeat) self.chat_visible = !self.chat_visible;
+            return;
         }
         self.worker.lock();
         defer self.worker.unlock();

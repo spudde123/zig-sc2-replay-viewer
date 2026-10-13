@@ -11,6 +11,7 @@ step = RIGHT
 zoom_in = EQUAL, KP_ADD
 zoom_out = MINUS, KP_SUBTRACT
 quit = ESCAPE
+toggle_chat = C
 pan_up = W
 pan_left = A
 pan_down = S
