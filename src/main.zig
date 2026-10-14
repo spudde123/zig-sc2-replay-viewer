@@ -28,6 +28,7 @@ const App = struct {
     chat: @import("replay/replay_data.zig").ChatQueue = .{},
     chat_visible: bool = false,
     production_visible: bool = true,
+    production_tab: @import("ui/inventory_view.zig").Tab = .production,
     selected_tag: ?u64 = null,
 
     fn fromUserdata(ptr: ?*anyopaque) *App {
@@ -86,6 +87,7 @@ const App = struct {
             .chat = &self.chat,
             .chat_visible = self.chat_visible,
             .production_visible = self.production_visible,
+            .production_tab = self.production_tab,
             .selected_tag = self.selected_tag,
             .projection_markers = self.options.projection_markers,
         });
@@ -110,6 +112,15 @@ const App = struct {
         {
             self.production_visible = !self.production_visible;
             return;
+        }
+        if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .LEFT) {
+            for (self.renderer.production_tab_rects, 0..) |rect, i| {
+                if (rect.contains(ev.*.mouse_x, ev.*.mouse_y)) {
+                    self.production_tab = @fromBackingInt(@intCast(i));
+                    self.production_visible = true;
+                    return;
+                }
+            }
         }
         if (ev.*.type == .MOUSE_DOWN and ev.*.mouse_button == .RIGHT) {
             self.selected_tag = null;
@@ -148,6 +159,23 @@ const App = struct {
         if (ev.*.type == .KEY_DOWN and self.bindings.actionFor(ev.*.key_code) == .toggle_production) {
             if (!ev.*.key_repeat) self.production_visible = !self.production_visible;
             return;
+        }
+        if (ev.*.type == .KEY_DOWN) {
+            if (self.bindings.actionFor(ev.*.key_code)) |action| {
+                const tab: ?@import("ui/inventory_view.zig").Tab = switch (action) {
+                    .tab_production => .production,
+                    .tab_units => .units,
+                    .tab_structures => .structures,
+                    else => null,
+                };
+                if (tab) |selected| {
+                    if (!ev.*.key_repeat) {
+                        self.production_tab = selected;
+                        self.production_visible = true;
+                    }
+                    return;
+                }
+            }
         }
         self.worker.lock();
         defer self.worker.unlock();

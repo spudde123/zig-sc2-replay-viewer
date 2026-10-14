@@ -2,7 +2,8 @@
 const std = @import("std");
 const data = @import("../replay/replay_data.zig");
 pub const max_groups = 128;
-pub const max_rows = 32;
+// Enough rows for every bounded group plus player headings and overflow.
+pub const max_rows = max_groups + 16;
 pub const max_bars = 3;
 pub const Group = struct {
     owner: i32,
@@ -68,7 +69,7 @@ pub fn summarize(scene: *const data.Scene) Summary {
             } else if (ongoing) summary.add(unit.owner, product, order.progress);
         }
         if (incomplete and !replaced) {
-            summary.add(unit.owner, .{ .key = unit.type_id, .kind = .unit, .name = unit.name }, unit.build_progress);
+            summary.add(unit.owner, .{ .key = unit.type_id, .kind = .unit, .name = unit.name, .is_structure = unit.is_structure }, unit.build_progress);
         }
     }
     std.mem.sort(Group, summary.groups[0..summary.count], {}, struct {
@@ -201,6 +202,7 @@ pub const Row = struct {
     bar_count: usize = 0,
     more: usize = 0,
     research: bool = false,
+    counts: ?struct { ready_begin: usize, building_begin: usize, ready: usize, building: usize } = null,
 };
 pub const Layout = struct {
     rows: [max_rows]Row = undefined,

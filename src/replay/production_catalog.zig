@@ -35,11 +35,30 @@ fn excluded(name: []const u8) bool {
 pub const Catalog = struct {
     storage: []Entry = &.{},
     count: usize = 0,
+    types: []data.Product = &.{},
+    type_count: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator, response: p.ResponseData) !Catalog {
         const units = response.units orelse &.{};
         const upgrades = response.upgrades orelse &.{};
         var self: Catalog = .{ .storage = try allocator.alloc(Entry, units.len + upgrades.len) };
+        errdefer allocator.free(self.storage);
+        self.types = try allocator.alloc(data.Product, units.len);
+        for (units) |unit| {
+            const id = unit.unit_id orelse continue;
+            var info: data.Product = .{ .key = id, .kind = .unit };
+            for (unit.attributes orelse &.{}) |attribute| if (attribute == .structure) {
+                info.is_structure = true;
+            };
+            setName(&info, unit.name orelse std.enums.tagName(@FieldType(p.Unit, "unit_type"), @fromBackingInt(id)) orelse "Unknown unit");
+            self.types[self.type_count] = info;
+            self.type_count += 1;
+        }
+        std.mem.sort(data.Product, self.types[0..self.type_count], {}, struct {
+            fn less(_: void, a: data.Product, b: data.Product) bool {
+                return a.key < b.key;
+            }
+        }.less);
         for (units) |unit| {
             const id = unit.unit_id orelse continue;
             const ability = unit.ability_id orelse continue;
@@ -52,7 +71,7 @@ pub const Catalog = struct {
                 structure = true;
             };
             if (structure and !morph) continue;
-            var product: data.Product = .{ .key = id, .kind = .unit, .replaces_construction = morph };
+            var product: data.Product = .{ .key = id, .kind = .unit, .replaces_construction = morph, .is_structure = structure };
             setName(&product, unit.name orelse std.enums.tagName(@FieldType(p.Unit, "unit_type"), @fromBackingInt(id)) orelse "Unknown unit");
             self.storage[self.count] = .{ .ability = ability, .product = product };
             self.count += 1;
@@ -77,6 +96,18 @@ pub const Catalog = struct {
 
     pub fn deinit(self: Catalog, allocator: std.mem.Allocator) void {
         allocator.free(self.storage);
+        allocator.free(self.types);
+    }
+
+    pub fn unitType(self: *const Catalog, id: u32) ?data.Product {
+        var lo: usize = 0;
+        var hi = self.type_count;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (self.types[mid].key < id) lo = mid + 1 else hi = mid;
+        }
+        if (lo < self.type_count and self.types[lo].key == id) return self.types[lo];
+        return null;
     }
 
     pub fn find(self: *const Catalog, ability: u32) ?data.Product {
@@ -130,6 +161,9 @@ test "catalog owns unit and research names, ignores builds and mode changes, and
     try std.testing.expect(catalog.find(626).?.kind == .unit); // Liberator training
     try std.testing.expectEqual(@as(u64, 100), catalog.find(1216).?.key);
     try std.testing.expect(catalog.find(1216).?.replaces_construction);
+    try std.testing.expect(catalog.unitType(100).?.is_structure);
+    try std.testing.expect(catalog.find(1216).?.is_structure);
+    try std.testing.expectEqualStrings("SCV", std.mem.sliceTo(&catalog.unitType(45).?.name, 0));
     try std.testing.expect(catalog.find(1516).?.replaces_construction); // Orbital fallback
     try std.testing.expect(catalog.find(1225).?.kind == .research); // Burrow research fallback
 }

@@ -12,12 +12,14 @@ const projection = @import("../camera/camera_projection.zig");
 const unit_overlay = @import("unit_overlay.zig");
 const production = @import("production_view.zig");
 const stats_view = @import("player_stats_view.zig");
+const inventory = @import("inventory_view.zig");
 
 pub const Overlay = struct {
     players: *const data.Players,
     chat: *const data.ChatQueue,
     chat_visible: bool = false,
     production_visible: bool = true,
+    production_tab: inventory.Tab = .production,
     selected_tag: ?u64 = null,
     projection_markers: bool = false,
 };
@@ -85,6 +87,7 @@ pub const Renderer = struct {
     stats_rect: Rect = .{},
     production_rect: Rect = .{},
     production_button_rect: Rect = .{},
+    production_tab_rects: [3]Rect = @splat(.{}),
     chat_rect: Rect = .{},
     order_box_rect: Rect = .{},
 
@@ -155,12 +158,25 @@ pub const Renderer = struct {
             const production_columns: usize = @intFromFloat(@floor((self.production_rect.width - 20) / 10));
             const label_columns: usize = @intFromFloat(@floor((self.production_rect.width - 214) / 10));
             if (overlay.production_visible) {
-                const summary = if (frame) |f| production.summarize(&f.scene) else production.Summary{};
-                production_layout = production.build(&summary, overlay.players, rows, production_columns, label_columns);
+                if (overlay.production_tab == .production) {
+                    const summary = if (frame) |f| production.summarize(&f.scene) else production.Summary{};
+                    production_layout = production.build(&summary, overlay.players, rows, production_columns, label_columns);
+                } else {
+                    const summary = if (frame) |f| inventory.summarize(&f.scene, overlay.production_tab == .structures) else inventory.Summary{};
+                    production_layout = inventory.build(&summary, overlay.players, rows, production_columns);
+                }
             }
             self.production_rect.height = 32 + @as(f32, @floatFromInt(production_layout.count)) * 18;
             self.production_button_rect = .{ .x = self.production_rect.x + self.production_rect.width - 66, .y = self.production_rect.y + 4, .width = 56, .height = 22 };
-        } else self.production_button_rect = .{};
+            var tab_x = self.production_rect.x + 6;
+            for (&self.production_tab_rects, 0..) |*rect, i| {
+                rect.* = .{ .x = tab_x, .y = self.production_rect.y + 4, .width = if (i == 0) 60 else 36, .height = 22 };
+                tab_x += rect.width + 4;
+            }
+        } else {
+            self.production_button_rect = .{};
+            self.production_tab_rects = @splat(.{});
+        }
         self.info_rect = self.hud_rect;
         if (self.production_rect.width > 0) {
             self.info_rect.width = self.production_rect.width;
@@ -203,7 +219,7 @@ pub const Renderer = struct {
         text.color3b(255, 255, 255);
         text.puts(label);
         self.drawPlayerStats(&stats_layout, width, height);
-        self.drawProduction(&production_layout, overlay.production_visible, width, height);
+        self.drawProduction(&production_layout, overlay.production_visible, overlay.production_tab, width, height);
         if (self.minimap_rect.width > 0) self.drawPlayerLabels(hud.labels, width, height);
         if (overlay.chat_visible) self.drawChat(overlay, width, height);
         self.drawChatButton(overlay.chat_visible, width, height);
@@ -248,15 +264,18 @@ pub const Renderer = struct {
         }
     }
 
-    fn drawProduction(self: *Renderer, layout: *const production.Layout, visible: bool, width: f32, height: f32) void {
+    fn drawProduction(self: *Renderer, layout: *const production.Layout, visible: bool, tab: inventory.Tab, width: f32, height: f32) void {
         const rect = self.production_rect;
         if (rect.width == 0) return;
         text.font(1);
         text.canvas(width * 8 / 12, height * 8 / 12);
-        text.origin((rect.x + 10) / 12, (rect.y + 8) / 12);
-        text.home();
-        text.color3b(170, 200, 230);
-        text.puts(if (rect.width >= 340) "Production + Research" else "Production");
+        for ([_][:0]const u8{ "1P+R", "2U", "3S" }, self.production_tab_rects, 0..) |title, tab_rect, i| {
+            if (@backingInt(tab) == i) solidRect(tab_rect, .{ 0.12, 0.22, 0.30 });
+            text.origin((tab_rect.x + 4) / 12, (tab_rect.y + 4) / 12);
+            text.home();
+            text.color3b(170, 200, 230);
+            text.puts(title);
+        }
         const button = self.production_button_rect;
         solidRect(button, .{ 0.08, 0.12, 0.17 });
         text.origin((button.x + 4) / 12, (button.y + 5) / 12);
@@ -269,7 +288,14 @@ pub const Renderer = struct {
             text.origin((rect.x + 10) / 10, y / 10);
             text.home();
             if (row.kind == .heading) text.color3b(170, 200, 230) else if (row.research) text.color3b(215, 185, 245) else text.color3b(235, 235, 235);
-            text.puts(std.mem.sliceTo(&row.text, 0));
+            const row_text = std.mem.sliceTo(&row.text, 0);
+            if (row.counts) |counts| {
+                text.putr(row_text, @intCast(counts.ready_begin));
+                if (counts.ready == 0) text.color3b(145, 150, 158) else text.color3b(145, 215, 160);
+                text.putr(row_text[counts.ready_begin..], @intCast(counts.building_begin - counts.ready_begin));
+                if (counts.building == 0) text.color3b(145, 150, 158) else text.color3b(240, 195, 110);
+                text.puts(row_text[counts.building_begin..]);
+            } else text.puts(row_text);
             const bars_x = rect.x + rect.width - 206;
             for (row.bars[0..row.bar_count], 0..) |progress, j| {
                 const bar: Rect = .{ .x = bars_x + @as(f32, @floatFromInt(j)) * 40, .y = y + 2, .width = 36, .height = 7 };
@@ -432,7 +458,7 @@ fn productionRect(width: f32, height: f32, hud: Rect, minimap: Rect, chat: Rect)
     var bottom = height - 12;
     if (minimap.width > 0) bottom = @min(bottom, minimap.y - 12);
     if (chat.width > 0 and chat.x < 12 + panel_width) bottom = @min(bottom, chat.y - 12);
-    const available = @min(300, bottom - y);
+    const available = bottom - y;
     if (available < 50) return .{};
     return .{ .x = 12, .y = y, .width = panel_width, .height = available };
 }
@@ -442,7 +468,9 @@ test "production panel stays below HUD and above minimap/chat, hiding on tiny wi
     const mini: Rect = .{ .x = 12, .y = 528, .width = 180, .height = 180 };
     const panel = productionRect(960, 720, hud, mini, chatRect(960, 720, mini));
     try std.testing.expectEqual(@as(f32, 60), panel.y);
-    try std.testing.expect(panel.y + panel.height < mini.y);
+    try std.testing.expectEqual(chatRect(960, 720, mini).y - 12, panel.y + panel.height);
+    const expanded = productionRect(960, 720, hud, mini, .{});
+    try std.testing.expectEqual(mini.y - 12, expanded.y + expanded.height);
     try std.testing.expectEqual(@as(f32, 0), productionRect(300, 720, hud, .{}, .{}).width);
     try std.testing.expectEqual(@as(f32, 0), productionRect(960, 100, hud, .{}, .{}).width);
     const small_chat: Rect = .{ .x = 200, .y = 180, .width = 200, .height = 150 };

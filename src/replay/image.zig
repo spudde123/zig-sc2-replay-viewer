@@ -116,7 +116,8 @@ test "snapshot construction cleans up every partial allocation on failure" {
             var pixels = [_]u8{ 10, 20, 30 };
             const image: protocol.ImageData = .{ .size = .{ .x = 1, .y = 1 }, .bits_per_pixel = 24, .image = &pixels };
             var orders = [_]protocol.UnitOrder{.{ .target = .{ .tag = 2 } }};
-            var units = [_]protocol.Unit{.{ .tag = 1, .orders = &orders }};
+            var passengers = [_]protocol.Passenger{.{ .tag = 2, .unit_type = @fromBackingInt(48) }};
+            var units = [_]protocol.Unit{.{ .tag = 1, .orders = &orders, .passengers = &passengers }};
             const frame = try Frame.fromObservation(allocator, .{ .observation = .{
                 .render = .{ .map = image, .minimap = image },
                 .raw = .{ .units = &units },

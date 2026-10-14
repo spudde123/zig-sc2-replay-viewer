@@ -61,10 +61,17 @@ pub fn capture(allocator: std.mem.Allocator, raw: ?p.ObservationRaw, context: Co
         if (player.camera) |camera| result.reported_camera = .{ .x = camera.x, .y = camera.y, .z = camera.z };
     }
     var order_count: usize = 0;
-    for (observation.units) |unit| order_count = try std.math.add(usize, order_count, unit.orders.len);
+    var passenger_count: usize = 0;
+    for (observation.units) |unit| {
+        order_count = try std.math.add(usize, order_count, unit.orders.len);
+        passenger_count = try std.math.add(usize, passenger_count, unit.passengers.len);
+    }
     result.units = try allocator.alloc(data.Unit, observation.units.len);
     errdefer allocator.free(result.units);
     result.orders = try allocator.alloc(data.Order, order_count);
+    errdefer allocator.free(result.orders);
+    result.passengers = try allocator.alloc(data.Passenger, passenger_count);
+    var passenger_cursor: usize = 0;
     var cursor: usize = 0;
     for (observation.units, result.units) |unit, *copy| {
         copy.* = .{
@@ -95,6 +102,22 @@ pub fn capture(allocator: std.mem.Allocator, raw: ?p.ObservationRaw, context: Co
         // is_on_screen belongs to SC2's raw camera, which can differ from the
         // replay observer RGB camera. Do not use it to cull our projected units.
         name(&copy.name, std.enums.tagName(@TypeOf(unit.unit_type), unit.unit_type), copy.type_id);
+        if (context.production_catalog) |catalog| {
+            if (catalog.unitType(copy.type_id)) |info| {
+                copy.is_structure = info.is_structure;
+                copy.name = info.name;
+            }
+        } else copy.is_structure = unit.is_structure;
+        for (unit.passengers) |passenger| {
+            const type_id: u32 = @intCast(@backingInt(passenger.unit_type));
+            var carried: data.Passenger = .{ .tag = passenger.tag, .type_id = type_id, .owner = unit.owner, .visible = copy.visible };
+            name(&carried.name, std.enums.tagName(@TypeOf(passenger.unit_type), passenger.unit_type), type_id);
+            if (context.production_catalog) |catalog| {
+                if (catalog.unitType(type_id)) |info| carried.name = info.name;
+            }
+            result.passengers[passenger_cursor] = carried;
+            passenger_cursor += 1;
+        }
         for (unit.orders) |order| {
             const id: u32 = @intCast(@backingInt(order.ability_id));
             var target: data.Order.Target = .none;
@@ -119,6 +142,11 @@ pub fn capture(allocator: std.mem.Allocator, raw: ?p.ObservationRaw, context: Co
     // Binary tag lookup remains valid when raw unit ordering changes each step.
     std.mem.sort(data.Unit, result.units, {}, struct {
         fn less(_: void, a: data.Unit, b: data.Unit) bool {
+            return a.tag < b.tag;
+        }
+    }.less);
+    std.mem.sort(data.Passenger, result.passengers, {}, struct {
+        fn less(_: void, a: data.Passenger, b: data.Passenger) bool {
             return a.tag < b.tag;
         }
     }.less);
@@ -152,14 +180,20 @@ test "scene owns flattened orders, names and neutral targets after response reus
 
 test "production products survive response arena and catalog destruction" {
     const Catalog = @import("production_catalog.zig").Catalog;
-    var unit_types = [_]p.UnitTypeData{.{ .unit_id = 45, .ability_id = 524, .name = "SCV" }};
+    var attributes = [_]p.Attribute{.structure};
+    var unit_types = [_]p.UnitTypeData{
+        .{ .unit_id = 45, .ability_id = 524, .name = "SCV" },
+        .{ .unit_id = 24, .name = "Bunker", .attributes = &attributes },
+        .{ .unit_id = 48, .ability_id = 560, .name = "Marine" },
+    };
     var upgrades = [_]p.UpgradeData{.{ .upgrade_id = 7, .ability_id = 652, .name = "InfantryWeapons1" }};
     const catalog = try Catalog.init(std.testing.allocator, .{ .units = &unit_types, .upgrades = &upgrades });
     var orders = [_]p.UnitOrder{
         .{ .ability_id = @fromBackingInt(524), .progress = 0.5 },
         .{ .ability_id = @fromBackingInt(652), .progress = 0.25 },
     };
-    var units = [_]p.Unit{.{ .tag = 20, .build_progress = 0.75, .orders = &orders }};
+    var passengers = [_]p.Passenger{.{ .tag = 30, .unit_type = @fromBackingInt(48) }};
+    var units = [_]p.Unit{.{ .tag = 20, .owner = 1, .unit_type = @fromBackingInt(24), .build_progress = 0.75, .orders = &orders, .passengers = &passengers }};
     const scene = capture(std.testing.allocator, .{ .units = &units }, .{ .production_catalog = &catalog }) catch |err| {
         catalog.deinit(std.testing.allocator);
         return err;
@@ -168,11 +202,16 @@ test "production products survive response arena and catalog destruction" {
     defer scene.deinit(std.testing.allocator);
     orders[0] = .{};
     units[0] = .{};
+    passengers[0] = .{};
     const copied = scene.ordersFor(scene.find(20).?);
     try std.testing.expectEqualStrings("SCV", std.mem.sliceTo(&copied[0].product.?.name, 0));
     try std.testing.expect(copied[1].product.?.kind == .research);
     try std.testing.expectEqualStrings("InfantryWeapons1", std.mem.sliceTo(&copied[1].product.?.name, 0));
     try std.testing.expectEqual(@as(f32, 0.75), scene.find(20).?.build_progress);
+    try std.testing.expect(scene.find(20).?.is_structure);
+    try std.testing.expectEqual(@as(u64, 30), scene.passengers[0].tag);
+    try std.testing.expectEqual(@as(i32, 1), scene.passengers[0].owner);
+    try std.testing.expectEqualStrings("Marine", std.mem.sliceTo(&scene.passengers[0].name, 0));
 }
 
 test "unit vitals, resources and harvester counts survive response reuse" {

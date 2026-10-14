@@ -17,6 +17,7 @@ pub const Product = struct {
     kind: Kind,
     name: [49:0]u8 = @splat(0),
     replaces_construction: bool = false,
+    is_structure: bool = false,
 };
 
 pub const Unit = struct {
@@ -28,6 +29,7 @@ pub const Unit = struct {
     radius: f32,
     visible: bool,
     flying: bool,
+    is_structure: bool = false,
     build_progress: f32 = 0,
     health: f32 = 0,
     health_max: f32 = 0,
@@ -44,6 +46,14 @@ pub const Unit = struct {
     shield_upgrade_level: i32 = 0,
     order_start: usize,
     order_count: usize,
+};
+
+pub const Passenger = struct {
+    tag: u64,
+    type_id: u32,
+    name: [49:0]u8 = @splat(0),
+    owner: i32,
+    visible: bool,
 };
 
 pub const Order = struct {
@@ -65,10 +75,12 @@ pub const Scene = struct {
     reported_camera: ?Vec3 = null,
     units: []Unit = &.{},
     orders: []Order = &.{},
+    passengers: []Passenger = &.{},
 
     pub fn deinit(self: Scene, allocator: std.mem.Allocator) void {
         allocator.free(self.units);
         allocator.free(self.orders);
+        allocator.free(self.passengers);
     }
 
     pub fn find(self: *const Scene, tag: u64) ?*const Unit {

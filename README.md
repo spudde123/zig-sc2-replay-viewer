@@ -67,7 +67,8 @@ SC2 cannot download maps automatically.
 | Up / Down (also `]` / `[`) | Faster/slower: 0.25x–16x |
 | Right Arrow | Advance one simulation loop while paused |
 | C | Show/hide chat |
-| P | Show/hide production and research |
+| P | Show/hide the production/units/structures panel |
+| 1 / 2 / 3 | Production + research / units / structures tabs |
 | Hold WASD | Smooth camera pan; combine keys for diagonals |
 | Mouse wheel / `+` / `-` | Zoom in/out (keypad `+` / `-` also work) |
 | Click / hold and drag minimap | Move the camera; zoom is preserved |
@@ -93,7 +94,8 @@ pan_right = L
 
 Each `action = key, key` line replaces that action's bindings; omitted actions
 retain their defaults. Available actions are `pause`, `speed_up`, `speed_down`,
-`step`, `zoom_in`, `zoom_out`, `quit`, `toggle_chat`, `toggle_production`, `pan_up`, `pan_left`,
+`step`, `zoom_in`, `zoom_out`, `quit`, `toggle_chat`, `toggle_production`,
+`tab_production`, `tab_units`, `tab_structures`, `pan_up`, `pan_left`,
 `pan_down`, and `pan_right`. Use `none` to unbind an action. Up to four keys per action are
 supported; names are case-insensitive and `#` starts a comment.
 
@@ -190,15 +192,29 @@ Resources remain visible when production is collapsed with **P**. Pausing
 freezes the displayed values. Parsing happens once on the worker; each published frame
 owns its selected values, with no GUI references into parser storage.
 
-## Production and research
+## Production, units and structures
 
-The top-left panel keeps game time, speed/state and loop counts above a
-**Production + Research** section. Its **Hide / Show** button collapses only
-production; playback information stays visible. **P** toggles the same section
-(default binding; configurable with `toggle_production = F4`). The toggle ignores
-key repeats and also works while loading, paused and after replay end.
+The top-left panel keeps game time, speed/state and loop counts above tabs titled
+**1P+R 2U 3S**. Press **1**, **2**, or **3** (or click their titles) for
+production + research, units, or structures. Selecting a tab opens the panel;
+the active title is highlighted. Its **Hide / Show** button and **P** collapse
+the selected view without hiding playback information. Tab selection is retained
+while collapsed. Rebind with `tab_production`, `tab_units`, `tab_structures`
+and `toggle_production`. Controls ignore key repeats and also work while loading,
+paused and after replay end.
 
-Each player has a separate section. Unfinished units/structures, active training
+Units and structures are grouped by owner and unit type, with rows such as
+`Marine: R:55 B:2`. `R` counts completed, visible reported units;
+`B` reuses the production view's active entries (not zero-progress queued jobs).
+Ready counts are soft green, building counts amber, and zero counts muted gray;
+unit names remain off-white and the labels retain the distinction without color.
+Structure classification comes from SC2's unit-type attributes and is copied
+into each snapshot. Reported bunker/transport passengers are counted as ready
+units, attributed to their carrier's owner, and deduplicated by tag against
+top-level units and other passenger records. Counts do not infer hidden or
+unreported units. Modes with distinct unit type IDs have distinct rows.
+
+In the production + research tab, each player has a separate section. Unfinished units/structures, active training
 and production morphs use green progress bars; research uses purple bars and an
 `R:` label. Identical results share a row with up to three short bars (furthest
 along first), followed by `N more` for additional active entries. Zero-progress
@@ -337,8 +353,8 @@ Files are grouped by responsibility:
 - `src/replay/player_stats.zig`: extracts the build-75689 stat timeline from MPQ;
   uses dynamically loaded native libbz2 and skips unrelated tracker events.
 - `src/ui/player_stats_view.zig`: bounded player-resource formatting.
-- `src/ui/chat_view.zig`, `src/ui/order_view.zig`, `src/ui/production_view.zig`:
-  bounded presentation-only formatting and production grouping/layout.
+- `src/ui/chat_view.zig`, `src/ui/order_view.zig`, `src/ui/production_view.zig`,
+  `src/ui/inventory_view.zig`: bounded formatting and grouped production/inventory layouts.
 - `src/ui/unit_overlay.zig`: GUI-thread selection footprint, arrows and order box.
 - `src/ui/renderer.zig`: owns Sokol textures and composes the world image/overlays,
   minimap, playback HUD, production/research and chat. GUI state holds the selected tag and recent

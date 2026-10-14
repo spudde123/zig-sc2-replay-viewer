@@ -16,6 +16,9 @@ pub const Action = enum {
     pan_right,
     toggle_chat,
     toggle_production,
+    tab_production,
+    tab_units,
+    tab_structures,
 
     pub fn isPan(self: Action) bool {
         return switch (self) {
@@ -58,6 +61,9 @@ pub const Keybinds = struct {
         binding(&.{.D}),
         binding(&.{.C}),
         binding(&.{.P}),
+        binding(&.{._1}),
+        binding(&.{._2}),
+        binding(&.{._3}),
     },
 
     pub fn keys(self: *const Keybinds, action: Action) []const Keycode {
@@ -181,7 +187,7 @@ test "partial overrides, aliases, comments, CRLF and disabling preserve other de
     try std.testing.expectEqualStrings("None", config.primaryName(.step));
     var hints: [512]u8 = undefined;
     try std.testing.expect(std.mem.startsWith(u8, try config.formatHints(&hints), "P pause"));
-    const digits = try parse("pause = 1\n");
+    const digits = try parse("pause = 1\ntab_production = none\n");
     try std.testing.expectEqual(Action.pause, digits.actionFor(._1).?);
 }
 
@@ -203,6 +209,10 @@ test "chat toggle has a configurable default, can be disabled and ignores repeat
 test "production toggle defaults to P, supports aliases and disabling, and ignores repeat" {
     const defaults: Keybinds = .{};
     try std.testing.expectEqual(Action.toggle_production, defaults.actionFor(.P).?);
+    try std.testing.expectEqual(Action.tab_production, defaults.actionFor(._1).?);
+    try std.testing.expectEqual(Action.tab_units, defaults.actionFor(._2).?);
+    try std.testing.expectEqual(Action.tab_structures, defaults.actionFor(._3).?);
+    try std.testing.expect(!Action.tab_units.acceptsRepeat());
     try std.testing.expect(!Action.toggle_production.acceptsRepeat());
     const custom = try parse("toggle_production = F4, TAB\n");
     try std.testing.expectEqual(Action.toggle_production, custom.actionFor(.F4).?);
