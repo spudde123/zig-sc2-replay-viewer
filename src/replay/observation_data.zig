@@ -86,6 +86,9 @@ pub fn capture(allocator: std.mem.Allocator, raw: ?p.ObservationRaw, context: Co
             .vespene_contents = unit.vespene_contents,
             .assigned_harvesters = unit.assigned_harvesters,
             .ideal_harvesters = unit.ideal_harvesters,
+            .attack_upgrade_level = unit.attack_upgrade_level,
+            .armor_upgrade_level = unit.armor_upgrade_level,
+            .shield_upgrade_level = unit.shield_upgrade_level,
             .order_start = cursor,
             .order_count = unit.orders.len,
         };
@@ -173,13 +176,13 @@ test "production products survive response arena and catalog destruction" {
 }
 
 test "unit vitals, resources and harvester counts survive response reuse" {
-    const expected: p.Unit = .{ .tag = 20, .build_progress = 0.5, .health = 75, .health_max = 100, .shield = 25, .shield_max = 50, .energy = 0, .energy_max = 200, .mineral_contents = 1500, .vespene_contents = 2250, .assigned_harvesters = 2, .ideal_harvesters = 3 };
+    const expected: p.Unit = .{ .tag = 20, .build_progress = 0.5, .health = 75, .health_max = 100, .shield = 25, .shield_max = 50, .energy = 0, .energy_max = 200, .mineral_contents = 1500, .vespene_contents = 2250, .assigned_harvesters = 2, .ideal_harvesters = 3, .attack_upgrade_level = 2, .armor_upgrade_level = 1, .shield_upgrade_level = 3 };
     var units = [_]p.Unit{expected};
     const scene = try capture(std.testing.allocator, .{ .units = &units }, .{});
     defer scene.deinit(std.testing.allocator);
     units[0] = .{};
     const selected = scene.find(20).?;
-    inline for (.{ "build_progress", "health", "health_max", "shield", "shield_max", "energy", "energy_max", "mineral_contents", "vespene_contents", "assigned_harvesters", "ideal_harvesters" }) |field| {
+    inline for (.{ "build_progress", "health", "health_max", "shield", "shield_max", "energy", "energy_max", "mineral_contents", "vespene_contents", "assigned_harvesters", "ideal_harvesters", "attack_upgrade_level", "armor_upgrade_level", "shield_upgrade_level" }) |field| {
         try std.testing.expectEqual(@field(expected, field), @field(selected.*, field));
     }
 }

@@ -39,6 +39,9 @@ pub const Unit = struct {
     vespene_contents: i32 = 0,
     assigned_harvesters: i32 = 0,
     ideal_harvesters: i32 = 0,
+    attack_upgrade_level: i32 = 0,
+    armor_upgrade_level: i32 = 0,
+    shield_upgrade_level: i32 = 0,
     order_start: usize,
     order_count: usize,
 };

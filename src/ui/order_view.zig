@@ -3,7 +3,7 @@ const std = @import("std");
 const data = @import("../replay/replay_data.zig");
 pub const max_orders = 1;
 pub const max_columns = 64;
-pub const max_rows = 11;
+pub const max_rows = 12;
 pub const Bar = struct {
     kind: enum { health, shield, energy },
     fraction: f32,
@@ -53,6 +53,11 @@ pub fn build(scene: *const data.Scene, unit: *const data.Unit, columns: usize) L
     if (unit.mineral_contents > 0) result.add(limit, "Minerals: {d}", .{unit.mineral_contents});
     if (unit.vespene_contents > 0) result.add(limit, "Vespene: {d}", .{unit.vespene_contents});
     if (unit.ideal_harvesters > 0) result.add(limit, "Harvesters: {d} / {d}", .{ unit.assigned_harvesters, unit.ideal_harvesters });
+    if (unit.attack_upgrade_level != 0 or unit.armor_upgrade_level != 0 or unit.shield_upgrade_level != 0) {
+        if (unit.shield_max > 0 or unit.shield_upgrade_level != 0) {
+            result.add(limit, "Upg: {d}/{d}/{d}", .{ unit.attack_upgrade_level, unit.armor_upgrade_level, unit.shield_upgrade_level });
+        } else result.add(limit, "Upg: {d}/{d}", .{ unit.attack_upgrade_level, unit.armor_upgrade_level });
+    }
     const orders = scene.ordersFor(unit);
     if (orders.len == 0) result.add(limit, "No orders reported", .{});
     for (orders[0..@min(orders.len, max_orders)], 0..) |order, i| {
@@ -95,11 +100,14 @@ test "unit details show ordered bars, resource contents and integer harvesters" 
         .vespene_contents = 2250,
         .assigned_harvesters = 0,
         .ideal_harvesters = 3,
+        .attack_upgrade_level = 2,
+        .armor_upgrade_level = 1,
+        .shield_upgrade_level = 3,
     }};
     const scene: data.Scene = .{ .units = &units, .orders = &list };
     const layout = build(&scene, &units[0], 64);
     try std.testing.expectEqual(max_rows, layout.count);
-    try std.testing.expectEqual(@as(usize, 14), layout.heightCells());
+    try std.testing.expectEqual(@as(usize, 15), layout.heightCells());
     try std.testing.expectEqualStrings("HP 75 / 100", std.mem.sliceTo(&layout.lines[2], 0));
     try std.testing.expectEqualStrings("Shields 0 / 50", std.mem.sliceTo(&layout.lines[3], 0));
     try std.testing.expectEqualStrings("Energy 25 / 200", std.mem.sliceTo(&layout.lines[4], 0));
@@ -109,7 +117,8 @@ test "unit details show ordered bars, resource contents and integer harvesters" 
     try std.testing.expectEqualStrings("Minerals: 1500", std.mem.sliceTo(&layout.lines[5], 0));
     try std.testing.expectEqualStrings("Vespene: 2250", std.mem.sliceTo(&layout.lines[6], 0));
     try std.testing.expectEqualStrings("Harvesters: 0 / 3", std.mem.sliceTo(&layout.lines[7], 0));
-    try std.testing.expectEqualStrings("... 1 more orders", std.mem.sliceTo(&layout.lines[10], 0));
+    try std.testing.expectEqualStrings("Upg: 2/1/3", std.mem.sliceTo(&layout.lines[8], 0));
+    try std.testing.expectEqualStrings("... 1 more orders", std.mem.sliceTo(&layout.lines[11], 0));
 }
 
 test "details hide absent stats and resources, keep empty applicable bars and clamp fill" {
@@ -134,6 +143,19 @@ test "details hide absent stats and resources, keep empty applicable bars and cl
     unit.health = std.math.inf(f32);
     unit.energy_max = 0;
     try std.testing.expectEqual(@as(usize, 3), build(&scene, &unit, 64).count);
+    unit.attack_upgrade_level = 2;
+    unit.armor_upgrade_level = 1;
+    const upgraded = build(&scene, &unit, 64);
+    try std.testing.expectEqualStrings("Upg: 2/1", std.mem.sliceTo(&upgraded.lines[2], 0));
+    // Shield-bearing units retain the third value even if shields/upgrade are zero.
+    unit.shield_max = 50;
+    const shielded = build(&scene, &unit, 64);
+    try std.testing.expectEqualStrings("Upg: 2/1/0", std.mem.sliceTo(&shielded.lines[3], 0));
+    unit.attack_upgrade_level = 0;
+    unit.armor_upgrade_level = 0;
+    const zero = build(&scene, &unit, 64);
+    try std.testing.expectEqual(@as(usize, 4), zero.count);
+    for (zero.lines[0..zero.count]) |line| try std.testing.expect(!std.mem.startsWith(u8, std.mem.sliceTo(&line, 0), "Upg:"));
 }
 
 test "order text bounds queue size, missing targets, long text and no orders" {
