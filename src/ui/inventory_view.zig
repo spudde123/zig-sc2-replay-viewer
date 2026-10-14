@@ -92,12 +92,17 @@ pub fn build(summary: *const Summary, players: *const data.Players, rows: usize,
     var layout: production.Layout = .{};
     const limit = @min(rows, production.max_rows);
     if (limit == 0) return layout;
-    var mask: u16 = 0;
-    for (players.items[0..players.count]) |player| {
-        if (player.id > 0 and player.id < 16) mask |= @as(u16, 1) << @as(u4, @intCast(player.id));
+    var owner_players = players.*;
+    for (summary.groups[0..summary.count]) |group| {
+        const id: u32 = @intCast(group.owner);
+        if (owner_players.slotForId(id) == null) owner_players.add(id, "");
     }
-    for (summary.groups[0..summary.count]) |group| mask |= @as(u16, 1) << @as(u4, @intCast(group.owner));
-    var owners: usize = @popCount(mask);
+    std.mem.sort(data.Players.Player, owner_players.items[0..owner_players.count], {}, struct {
+        fn less(_: void, a: data.Players.Player, b: data.Players.Player) bool {
+            return a.id < b.id;
+        }
+    }.less);
+    var owners = owner_players.count;
     if (owners == 0) {
         add(&layout, .empty, "No units reported", columns);
         return layout;
@@ -110,8 +115,8 @@ pub fn build(summary: *const Summary, players: *const data.Players, rows: usize,
         overflow(&layout, omitted, columns);
         return layout;
     }
-    for (1..16) |owner| {
-        if (mask & (@as(u16, 1) << @as(u4, @intCast(owner))) == 0) continue;
+    for (owner_players.items[0..owner_players.count]) |player| {
+        const owner: i32 = @intCast(player.id);
         var begin: usize = 0;
         while (begin < summary.count and summary.groups[begin].owner < owner) begin += 1;
         var end = begin;
@@ -160,15 +165,15 @@ fn testUnit(tag: u64, owner: i32, type_id: u32, structure: bool, progress: f32, 
     return u;
 }
 test "inventory merges ready units, deduplicated passengers and existing production counts by owner and type" {
-    var units = [_]data.Unit{ testUnit(1, 1, 21, true, 1, "Barracks"), testUnit(2, 1, 48, false, 1, "Marine"), testUnit(3, 2, 45, false, 1, "SCV"), testUnit(4, 1, 21, true, 0.5, "Barracks") };
+    var units = [_]data.Unit{ testUnit(1, 3, 21, true, 1, "Barracks"), testUnit(2, 3, 48, false, 1, "Marine"), testUnit(3, 7, 45, false, 1, "SCV"), testUnit(4, 3, 21, true, 0.5, "Barracks") };
     var product: data.Product = .{ .key = 48, .kind = .unit };
     @memcpy(product.name[0..6], "Marine");
     var orders = [_]data.Order{.{ .ability_id = 560, .product = product, .progress = 0.5, .target = .none }};
     units[0].order_count = 1;
     var passengers = [_]data.Passenger{
-        .{ .tag = 2, .type_id = 48, .owner = 1, .visible = true },
-        .{ .tag = 5, .type_id = 48, .owner = 1, .visible = true },
-        .{ .tag = 5, .type_id = 48, .owner = 1, .visible = true },
+        .{ .tag = 2, .type_id = 48, .owner = 3, .visible = true },
+        .{ .tag = 5, .type_id = 48, .owner = 3, .visible = true },
+        .{ .tag = 5, .type_id = 48, .owner = 3, .visible = true },
     };
     for (&passengers) |*p| @memcpy(p.name[0..6], "Marine");
     const scene: data.Scene = .{ .units = &units, .orders = &orders, .passengers = &passengers };

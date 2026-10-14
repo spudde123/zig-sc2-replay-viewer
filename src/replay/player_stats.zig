@@ -10,26 +10,26 @@ const max_tracker = 16 * 1024 * 1024;
 pub const Sample = struct { player_id: u8, values: data.PlayerEconomy };
 pub const Timeline = struct {
     samples: []Sample,
-    player_mask: u16,
     pub fn deinit(self: Timeline, allocator: std.mem.Allocator) void {
         allocator.free(self.samples);
     }
-    pub fn at(self: Timeline, loop: u32) data.PlayerStats {
+    pub fn at(self: Timeline, loop: u32, players: *const data.Players) data.PlayerStats {
         var result: data.PlayerStats = .{ .available = true };
+        for (players.items[0..players.count], 0..) |player, slot| result.player_ids[slot] = player.id;
         var lo: usize = 0;
         var hi = self.samples.len;
         while (lo < hi) {
             const mid = lo + (hi - lo) / 2;
             if (self.samples[mid].values.game_loop <= loop) lo = mid + 1 else hi = mid;
         }
-        var found: u16 = 0;
-        while (lo > 0 and found != self.player_mask) {
+        var remaining = players.count;
+        while (lo > 0 and remaining > 0) {
             lo -= 1;
             const sample = self.samples[lo];
-            const bit = @as(u16, 1) << @as(u4, @intCast(sample.player_id));
-            if (found & bit == 0) {
-                result.items[sample.player_id] = sample.values;
-                found |= bit;
+            const slot = players.slotForId(sample.player_id) orelse continue;
+            if (result.items[slot] == null) {
+                result.items[slot] = sample.values;
+                remaining -= 1;
             }
         }
         return result;
@@ -42,13 +42,21 @@ test "timeline selects preceding complete supply samples independently for each 
         .{ .player_id = 2, .values = .{ .game_loop = 10, .minerals = 100, .vespene = 25, .food_used = 13.5, .food_cap = 20, .worker_supply = 12, .army_supply = 1.5 } },
         .{ .player_id = 1, .values = .{ .game_loop = 160, .minerals = 200, .vespene = 50, .food_used = 50, .food_cap = 60, .worker_supply = 20, .army_supply = 30 } },
     };
-    const timeline: Timeline = .{ .samples = &samples, .player_mask = 6 };
-    try std.testing.expect(timeline.at(0).items[1] == null);
-    try std.testing.expect(timeline.at(1).items[2] == null);
-    try std.testing.expectEqualDeep(samples[0].values, timeline.at(159).items[1].?);
-    try std.testing.expectEqualDeep(samples[1].values, timeline.at(160).items[2].?);
-    try std.testing.expectEqualDeep(samples[2].values, timeline.at(160).items[1].?);
-    try std.testing.expectEqualDeep(samples[0].values, timeline.at(1).items[1].?);
+    // Deliberately reverse metadata order and use noncontiguous protocol IDs.
+    samples[0].player_id = 3;
+    samples[1].player_id = 7;
+    samples[2].player_id = 3;
+    var players: data.Players = .{};
+    players.add(7, "Bob");
+    players.add(3, "Alice");
+    const timeline: Timeline = .{ .samples = &samples };
+    try std.testing.expect(timeline.at(0, &players).forPlayer(3) == null);
+    try std.testing.expect(timeline.at(1, &players).forPlayer(7) == null);
+    try std.testing.expectEqualDeep(samples[0].values, timeline.at(159, &players).forPlayer(3).?);
+    try std.testing.expectEqualDeep(samples[1].values, timeline.at(160, &players).items[0].?);
+    try std.testing.expectEqualDeep(samples[2].values, timeline.at(160, &players).items[1].?);
+    try std.testing.expectEqualDeep(samples[0].values, timeline.at(1, &players).forPlayer(3).?);
+    try std.testing.expect(timeline.at(160, &players).forPlayer(1) == null);
 }
 
 pub fn load(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Timeline {
@@ -310,7 +318,6 @@ fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Timeline {
     var samples: std.ArrayList(Sample) = .empty;
     defer samples.deinit(allocator);
     var loop: u32 = 0;
-    var mask: u16 = 0;
     while (reader.pos < bytes.len) {
         try reader.expect(3); // SVarUint32 tagged choice
         const choice = try reader.vint();
@@ -320,11 +327,10 @@ fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Timeline {
         if (event == 0) {
             const sample = try readSample(&reader, loop);
             try samples.append(allocator, sample);
-            mask |= @as(u16, 1) << @as(u4, @intCast(sample.player_id));
         } else try reader.skip(0);
     }
     if (samples.items.len == 0) return error.MissingPlayerStats;
-    return .{ .samples = try samples.toOwnedSlice(allocator), .player_mask = mask };
+    return .{ .samples = try samples.toOwnedSlice(allocator) };
 }
 
 test "tagged decoder rejects excessive lengths, nesting, varints and loop overflow" {

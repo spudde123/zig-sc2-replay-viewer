@@ -1,11 +1,12 @@
 //! Bounded formatting of the most recent preceding replay-stat samples.
 const std = @import("std");
 const data = @import("../replay/replay_data.zig");
+const max_rows = data.max_players * 3 + 1;
 pub const Layout = struct {
-    lines: [33][96:0]u8 = @splat(@splat(0)),
+    lines: [max_rows][96:0]u8 = @splat(@splat(0)),
     count: usize = 0,
     columns: usize = 0,
-    headings: [33]bool = @splat(false),
+    headings: [max_rows]bool = @splat(false),
     fn add(self: *Layout, value: []const u8) void {
         const n = @min(value.len, self.lines[0].len);
         @memcpy(self.lines[self.count][0..n], value[0..n]);
@@ -28,7 +29,7 @@ pub fn build(players: *const data.Players, stats: data.PlayerStats, rows: usize)
     var shown: usize = 0;
     for (players.items[0..players.count], 0..) |*player, i| {
         const reserve: usize = if (i + 1 < players.count) 1 else 0;
-        const sample = if (player.id < stats.items.len) stats.items[player.id] else null;
+        const sample = stats.forPlayer(player.id);
         const required: usize = if (sample != null) 3 else 2;
         if (layout.count + required + reserve > limit) break;
         var buffer: [256]u8 = undefined;
@@ -62,10 +63,10 @@ fn food(buffer: []u8, value: f32) []const u8 {
 
 test "stats formatting shows player names, fractional supply, missing data and bounded rows" {
     var players: data.Players = .{};
-    players.add(1, "Alice");
-    players.add(2, "Bob");
-    var stats: data.PlayerStats = .{ .available = true };
-    stats.items[1] = .{ .game_loop = 160, .minerals = 123, .vespene = 55, .food_used = 13.5, .food_cap = 200, .worker_supply = 12, .army_supply = 1.5 };
+    players.add(3, "Alice");
+    players.add(7, "Bob");
+    var stats: data.PlayerStats = .{ .available = true, .player_ids = .{ 3, 7 } };
+    stats.items[0] = .{ .game_loop = 160, .minerals = 123, .vespene = 55, .food_used = 13.5, .food_cap = 200, .worker_supply = 12, .army_supply = 1.5 };
     const layout = build(&players, stats, 10);
     try std.testing.expectEqualStrings("Alice", std.mem.sliceTo(&layout.lines[0], 0));
     try std.testing.expect(layout.headings[0] and layout.headings[3]);
@@ -73,7 +74,7 @@ test "stats formatting shows player names, fractional supply, missing data and b
     try std.testing.expectEqualStrings("M: 123  V: 55", std.mem.sliceTo(&layout.lines[1], 0));
     try std.testing.expectEqualStrings("A: 1.5 W: 12 S: 13.5 / 200", std.mem.sliceTo(&layout.lines[2], 0));
     try std.testing.expectEqualStrings("Waiting for first stat sample", std.mem.sliceTo(&layout.lines[4], 0));
-    stats.items[2] = .{ .game_loop = 160, .minerals = 50, .vespene = 0, .food_used = 12, .food_cap = 15, .worker_supply = 12, .army_supply = 0 };
+    stats.items[1] = .{ .game_loop = 160, .minerals = 50, .vespene = 0, .food_used = 12, .food_cap = 15, .worker_supply = 12, .army_supply = 0 };
     const both = build(&players, stats, 6);
     try std.testing.expectEqual(@as(usize, 6), both.count);
     try std.testing.expectEqualStrings("A: 0 W: 12 S: 12 / 15", std.mem.sliceTo(&both.lines[5], 0));

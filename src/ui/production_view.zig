@@ -3,7 +3,7 @@ const std = @import("std");
 const data = @import("../replay/replay_data.zig");
 pub const max_groups = 128;
 // Enough rows for every bounded group plus player headings and overflow.
-pub const max_rows = max_groups + 16;
+pub const max_rows = max_groups + data.max_players + 1;
 pub const max_bars = 3;
 pub const Group = struct {
     owner: i32,

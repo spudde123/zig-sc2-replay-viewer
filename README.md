@@ -126,6 +126,12 @@ image updates over large catch-up jumps. In busy scenes, the requested speed
 may not be reached; excess catch-up debt is discarded rather than accumulated.
 The final frame stays visible at replay end.
 
+The viewer accepts exactly two non-observer participants, checked using SC2's
+replay metadata before starting the replay. Other participant counts cause an
+error and clean shutdown, independently of whether optional stats parsing works.
+Actual player IDs are preserved and mapped to two internal slots, rather than
+used as zero-based array indices; IDs need not be contiguous. Observer and neutral owner IDs are not participant slots.
+
 The minimap shows player names anchored at their starting bases (or first owned
 unit if no base is available). These white labels identify ownership without
 assuming SC2's rendered color mapping, including in mirror matchups. Players

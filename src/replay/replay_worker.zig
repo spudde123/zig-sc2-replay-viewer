@@ -138,7 +138,9 @@ pub const Worker = struct {
         defer permanent.deinit();
         var responses = std.heap.ArenaAllocator.init(self.allocator);
         defer responses.deinit();
-        var session = try sc2.ReplaySession.open(permanent.allocator(), self.io, self.config, responses.allocator());
+        var config = self.config;
+        config.required_player_count = data.max_players;
+        var session = try sc2.ReplaySession.open(permanent.allocator(), self.io, config, responses.allocator());
         defer session.close();
         self.production_catalog = try @import("production_catalog.zig").Catalog.init(self.allocator, try session.client.getGameData());
         defer {
@@ -233,7 +235,7 @@ pub const Worker = struct {
             .terrain = if (self.terrain) |*terrain| terrain else null,
             .production_catalog = if (self.production_catalog) |*catalog| catalog else null,
         });
-        if (self.stats_timeline) |timeline| frame.player_stats = timeline.at(frame.game_loop);
+        if (self.stats_timeline) |timeline| frame.player_stats = timeline.at(frame.game_loop, &self.players);
         self.lock();
         const old = self.pending;
         appendChat(&self.pending_chat, obs);

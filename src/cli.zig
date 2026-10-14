@@ -2,7 +2,7 @@ const std = @import("std");
 const sc2 = @import("zig-sc2");
 
 pub const Options = struct {
-    session: sc2.ReplaySession.Config = .{ .installation = "", .replay = "", .player_id = 0 },
+    session: sc2.ReplaySession.Config = .{ .installation = "", .replay = "", .player_id = 0, .required_player_count = @import("replay/replay_data.zig").max_players },
     probe: bool = false,
     projection_markers: bool = false,
     capture: ?[]const u8 = null,

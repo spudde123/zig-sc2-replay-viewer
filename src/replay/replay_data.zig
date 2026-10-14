@@ -3,6 +3,8 @@
 //! matching image frame. All slices in a Scene are owned, never response pointers.
 const std = @import("std");
 
+pub const max_players = 2;
+
 pub const Vec3 = struct { x: f32 = 0, y: f32 = 0, z: f32 = 0 };
 
 pub const CameraPose = struct {
@@ -121,7 +123,16 @@ pub const PlayerEconomy = struct {
 
 pub const PlayerStats = struct {
     available: bool = false,
-    items: [16]?PlayerEconomy = @splat(null),
+    player_ids: [max_players]u32 = @splat(0),
+    items: [max_players]?PlayerEconomy = @splat(null),
+
+    pub fn forPlayer(self: *const PlayerStats, id: u32) ?PlayerEconomy {
+        if (id == 0) return null;
+        for (self.player_ids, self.items) |player_id, values| {
+            if (player_id == id) return values;
+        }
+        return null;
+    }
 };
 
 pub const Players = struct {
@@ -130,7 +141,7 @@ pub const Players = struct {
         name: [32]u8 = @splat(0),
         name_len: usize = 0,
     };
-    items: [16]Player = @splat(.{}),
+    items: [max_players]Player = @splat(.{}),
     count: usize = 0,
 
     pub fn add(self: *Players, id: u32, player_name: []const u8) void {
@@ -142,13 +153,16 @@ pub const Players = struct {
         self.count += 1;
     }
 
-    pub fn name(self: *const Players, id: u32) ?[]const u8 {
-        for (self.items[0..self.count]) |*player| {
-            if (player.id != id) continue;
-            const value = std.mem.trim(u8, player.name[0..player.name_len], " \t\r\n");
-            return if (value.len > 0) value else null;
-        }
+    pub fn slotForId(self: *const Players, id: u32) ?usize {
+        for (self.items[0..self.count], 0..) |player, slot| if (player.id == id) return slot;
         return null;
+    }
+
+    pub fn name(self: *const Players, id: u32) ?[]const u8 {
+        const slot = self.slotForId(id) orelse return null;
+        const player = &self.items[slot];
+        const value = std.mem.trim(u8, player.name[0..player.name_len], " \t\r\n");
+        return if (value.len > 0) value else null;
     }
 };
 

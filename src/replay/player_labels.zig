@@ -11,7 +11,7 @@ pub const Label = struct {
 };
 
 pub const Labels = struct {
-    items: [16]Label = @splat(.{}),
+    items: [@import("replay_data.zig").max_players]Label = @splat(.{}),
     count: usize = 0,
 };
 
