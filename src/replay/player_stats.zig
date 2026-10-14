@@ -36,6 +36,21 @@ pub const Timeline = struct {
     }
 };
 
+test "timeline selects preceding complete supply samples independently for each player" {
+    var samples = [_]Sample{
+        .{ .player_id = 1, .values = .{ .game_loop = 1, .minerals = 50, .vespene = 0, .food_used = 12, .food_cap = 15, .worker_supply = 12, .army_supply = 0 } },
+        .{ .player_id = 2, .values = .{ .game_loop = 10, .minerals = 100, .vespene = 25, .food_used = 13.5, .food_cap = 20, .worker_supply = 12, .army_supply = 1.5 } },
+        .{ .player_id = 1, .values = .{ .game_loop = 160, .minerals = 200, .vespene = 50, .food_used = 50, .food_cap = 60, .worker_supply = 20, .army_supply = 30 } },
+    };
+    const timeline: Timeline = .{ .samples = &samples, .player_mask = 6 };
+    try std.testing.expect(timeline.at(0).items[1] == null);
+    try std.testing.expect(timeline.at(1).items[2] == null);
+    try std.testing.expectEqualDeep(samples[0].values, timeline.at(159).items[1].?);
+    try std.testing.expectEqualDeep(samples[1].values, timeline.at(160).items[2].?);
+    try std.testing.expectEqualDeep(samples[2].values, timeline.at(160).items[1].?);
+    try std.testing.expectEqualDeep(samples[0].values, timeline.at(1).items[1].?);
+}
+
 pub fn load(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Timeline {
     const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_file));
     defer allocator.free(bytes);
@@ -254,7 +269,7 @@ fn checkBuild(bytes: []const u8) !void {
 
 fn readSample(reader: *Reader, loop: u32) !Sample {
     var player: ?u32 = null;
-    var values: [4]?u32 = @splat(null);
+    var values: [5]?u32 = @splat(null);
     const fields = try reader.structure();
     for (0..fields) |_| {
         switch (try reader.vint()) {
@@ -265,6 +280,7 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
                     switch (try reader.vint()) {
                         0 => values[0] = try reader.integer(),
                         1 => values[1] = try reader.integer(),
+                        4 => values[4] = try reader.integer(),
                         29 => values[2] = try reader.integer(),
                         30 => values[3] = try reader.integer(),
                         else => try reader.skip(0),
@@ -276,7 +292,17 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
     }
     const id = player orelse return error.MissingPlayerStats;
     if (id == 0 or id >= 16) return error.InvalidPlayerId;
-    return .{ .player_id = @intCast(id), .values = .{ .game_loop = loop, .minerals = values[0] orelse return error.MissingPlayerStats, .vespene = values[1] orelse return error.MissingPlayerStats, .food_used = @as(f32, @floatFromInt(values[2] orelse return error.MissingPlayerStats)) / 4096, .food_cap = @min(200, @as(f32, @floatFromInt(values[3] orelse return error.MissingPlayerStats)) / 4096) } };
+    const used = @as(f32, @floatFromInt(values[2] orelse return error.MissingPlayerStats)) / 4096;
+    const workers = values[4] orelse return error.MissingPlayerStats;
+    return .{ .player_id = @intCast(id), .values = .{
+        .game_loop = loop,
+        .minerals = values[0] orelse return error.MissingPlayerStats,
+        .vespene = values[1] orelse return error.MissingPlayerStats,
+        .food_used = used,
+        .food_cap = @min(200, @as(f32, @floatFromInt(values[3] orelse return error.MissingPlayerStats)) / 4096),
+        .worker_supply = workers,
+        .army_supply = @max(0, used - @as(f32, @floatFromInt(workers))),
+    } };
 }
 
 fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Timeline {

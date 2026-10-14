@@ -102,6 +102,9 @@ pub const PlayerEconomy = struct {
     vespene: u32,
     food_used: f32,
     food_cap: f32,
+    worker_supply: u32,
+    // Total used supply minus existing workers, including reserved production supply.
+    army_supply: f32,
 };
 
 pub const PlayerStats = struct {
