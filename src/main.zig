@@ -40,7 +40,9 @@ const App = struct {
 
     fn frame(ptr: ?*anyopaque) callconv(.c) void {
         const self = fromUserdata(ptr);
-        if (self.worker.takeFrameAndChat(&self.chat)) |next| {
+        const update = self.worker.takeFrameAndChat(&self.chat);
+        if (update.new_chat) self.chat_visible = true;
+        if (update.frame) |next| {
             if (self.current) |old| old.deinit(self.worker.allocator);
             self.current = next;
             if (self.selected_tag) |tag| {

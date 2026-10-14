@@ -98,13 +98,14 @@ pub const Worker = struct {
 
     /// Atomically take the latest image and all queued events. Image replacement
     /// is allowed, but chat is retained independently until the GUI drains it.
-    pub fn takeFrameAndChat(self: *Worker, history: *data.ChatQueue) ?images.Frame {
+    pub fn takeFrameAndChat(self: *Worker, history: *data.ChatQueue) struct { frame: ?images.Frame, new_chat: bool } {
         self.lock();
         defer self.unlock();
         const frame = self.pending;
         self.pending = null;
+        const new_chat = self.pending_chat.count != 0;
         self.pending_chat.drainInto(history);
-        return frame;
+        return .{ .frame = frame, .new_chat = new_chat };
     }
 
     pub fn deinit(self: *Worker) void {
@@ -304,7 +305,9 @@ test "replacing image frames does not replace queued chat" {
     worker.camera.distance = 80; // GUI-facing command state can be ahead of RGB.
     try worker.publish(obs, .in_replay, submitted);
     units[0].position.x = 1.8; // Response arena may immediately be reused.
-    const frame = worker.takeFrameAndChat(&history).?;
+    const update = worker.takeFrameAndChat(&history);
+    try std.testing.expect(update.new_chat);
+    const frame = update.frame.?;
     defer frame.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(u32, 2), frame.game_loop);
     try std.testing.expectEqual(@as(f32, 40), frame.scene.camera.?.distance);
@@ -312,8 +315,19 @@ test "replacing image frames does not replace queued chat" {
     try std.testing.expectEqual(@as(usize, 2), history.count);
     try std.testing.expectEqualStrings("first", history.at(0).text());
     try std.testing.expectEqualStrings("second", history.at(1).text());
-    try std.testing.expect(worker.takeFrameAndChat(&history) == null);
+    const empty = worker.takeFrameAndChat(&history);
+    try std.testing.expect(empty.frame == null);
+    try std.testing.expect(!empty.new_chat);
     try std.testing.expectEqual(@as(usize, 2), history.count);
+    // Detect new messages even when history length cannot grow, and without an image.
+    for (0..data.ChatQueue.capacity) |_| history.push(data.ChatMessage.init(1, 2, "old"));
+    worker.pending_chat.push(data.ChatMessage.init(1, 3, "third"));
+    const chat_only = worker.takeFrameAndChat(&history);
+    try std.testing.expect(chat_only.frame == null);
+    try std.testing.expect(chat_only.new_chat);
+    try std.testing.expectEqual(data.ChatQueue.capacity, history.count);
+    try std.testing.expectEqualStrings("third", history.at(history.count - 1).text());
+    try std.testing.expect(!worker.takeFrameAndChat(&history).new_chat);
 }
 
 test "minimap positioning preserves current and pending zoom before scrolling" {

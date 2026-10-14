@@ -143,7 +143,11 @@ limit for every map.
 
 A bottom-right panel shows replay chat with player names and game times.
 Press **C** or click **Hide chat / Show chat** below the panel to toggle its
-visibility (hidden by default). Rebind it with `toggle_chat = F4` in `keybinds.conf`. Hiding it does not stop message collection or clear recent history.
+visibility (hidden initially). A newly received message automatically opens the
+panel if it is hidden; after manually hiding it, it stays hidden until another
+new message arrives. Existing history alone does not reopen it. Rebind the toggle
+with `toggle_chat = F4` in `keybinds.conf`. Hiding it does not stop message
+collection or clear recent history.
 The button also works while loading, paused, and at replay end; visibility is
 local to the GUI and resets when the viewer restarts.
 Messages stay visible while paused and at replay end. Unknown names fall back to
