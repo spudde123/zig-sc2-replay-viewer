@@ -39,13 +39,11 @@ pub fn build(players: *const data.Players, stats: data.PlayerStats, rows: usize)
         layout.add(name);
         if (sample) |s| {
             layout.add(std.fmt.bufPrint(&buffer, "M: {d}  V: {d}", .{ s.minerals, s.vespene }) catch unreachable);
-            var army: [24]u8 = undefined;
-            const army_text = food(&army, s.army_supply);
             var used: [24]u8 = undefined;
             var cap: [24]u8 = undefined;
             const used_text = food(&used, s.food_used);
             const cap_text = food(&cap, s.food_cap);
-            layout.add(std.fmt.bufPrint(&buffer, "A: {s} W: {d} S: {s} / {s}", .{ army_text, s.worker_supply, used_text, cap_text }) catch unreachable);
+            layout.add(std.fmt.bufPrint(&buffer, "W: {d} S: {s} / {s}", .{ s.worker_supply, used_text, cap_text }) catch unreachable);
         } else {
             layout.add(if (stats.available) "Waiting for first stat sample" else "Unavailable");
         }
@@ -66,18 +64,18 @@ test "stats formatting shows player names, fractional supply, missing data and b
     players.add(3, "Alice");
     players.add(7, "Bob");
     var stats: data.PlayerStats = .{ .available = true, .player_ids = .{ 3, 7 } };
-    stats.items[0] = .{ .game_loop = 160, .minerals = 123, .vespene = 55, .food_used = 13.5, .food_cap = 200, .worker_supply = 12, .army_supply = 1.5 };
+    stats.items[0] = .{ .game_loop = 160, .minerals = 123, .vespene = 55, .food_used = 13.5, .food_cap = 200, .worker_supply = 12 };
     const layout = build(&players, stats, 10);
     try std.testing.expectEqualStrings("Alice", std.mem.sliceTo(&layout.lines[0], 0));
     try std.testing.expect(layout.headings[0] and layout.headings[3]);
     try std.testing.expect(!layout.headings[1] and !layout.headings[2] and !layout.headings[4]);
     try std.testing.expectEqualStrings("M: 123  V: 55", std.mem.sliceTo(&layout.lines[1], 0));
-    try std.testing.expectEqualStrings("A: 1.5 W: 12 S: 13.5 / 200", std.mem.sliceTo(&layout.lines[2], 0));
+    try std.testing.expectEqualStrings("W: 12 S: 13.5 / 200", std.mem.sliceTo(&layout.lines[2], 0));
     try std.testing.expectEqualStrings("Waiting for first stat sample", std.mem.sliceTo(&layout.lines[4], 0));
-    stats.items[1] = .{ .game_loop = 160, .minerals = 50, .vespene = 0, .food_used = 12, .food_cap = 15, .worker_supply = 12, .army_supply = 0 };
+    stats.items[1] = .{ .game_loop = 160, .minerals = 50, .vespene = 0, .food_used = 12, .food_cap = 15, .worker_supply = 12 };
     const both = build(&players, stats, 6);
     try std.testing.expectEqual(@as(usize, 6), both.count);
-    try std.testing.expectEqualStrings("A: 0 W: 12 S: 12 / 15", std.mem.sliceTo(&both.lines[5], 0));
+    try std.testing.expectEqualStrings("W: 12 S: 12 / 15", std.mem.sliceTo(&both.lines[5], 0));
     try std.testing.expectEqualStrings("1 players not shown", std.mem.sliceTo(&build(&players, stats, 5).lines[3], 0));
     const unavailable = build(&players, .{}, 10);
     try std.testing.expectEqualStrings("Unavailable", std.mem.sliceTo(&unavailable.lines[1], 0));

@@ -174,12 +174,10 @@ covering the minimap.
 ## Player resources
 
 A separate top-right panel shows sampled minerals (`M`) and vespene (`V`),
-followed by `A: army supply W: worker supply S: used / cap` for each player,
-independently of observer `PlayerCommon` data. Worker supply is the recorded
-regular-worker count (each costs one supply). Army supply is derived from the
-same sample as `max(0, used supply - worker count)`: it includes reserved
-production supply, including workers in training, rather than representing
-only completed army units.
+followed by `W: workers S: used / cap` for each player, independently of observer
+`PlayerCommon` data. Workers are the recorded regular-worker count (each costs
+one supply). Total used supply includes supply reserved for production; no army
+supply estimate is shown.
 It hides when there is too little space to avoid overlapping the other panels.
 A small native parser reads only `SPlayerStatsEvent` from the replay's tracker
 stream, targeting base build **75689** and its MPQ v3 single-unit files.
@@ -189,7 +187,8 @@ Samples normally occur every 160 loops (about 7.14 seconds at Faster speed).
 The viewer uses the latest sample at or before the displayed image's loop.
 Values can therefore lag gameplay by roughly seven seconds between samples;
 no sample age is displayed. Values come from **recorded samples, not live unit
-counts or interpolated balances**; the army estimate is derived from those samples. Fractional supply is preserved, and recorded food-made is clamped
+counts or interpolated balances**. Fractional supply is preserved, and recorded
+food-made is clamped
 to the standard melee cap of 200. Before the first sample, values are pending.
 Missing tracker data, other builds/formats, or missing `libbz2` disable stats
 without preventing replay playback.

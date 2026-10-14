@@ -38,9 +38,9 @@ pub const Timeline = struct {
 
 test "timeline selects preceding complete supply samples independently for each player" {
     var samples = [_]Sample{
-        .{ .player_id = 1, .values = .{ .game_loop = 1, .minerals = 50, .vespene = 0, .food_used = 12, .food_cap = 15, .worker_supply = 12, .army_supply = 0 } },
-        .{ .player_id = 2, .values = .{ .game_loop = 10, .minerals = 100, .vespene = 25, .food_used = 13.5, .food_cap = 20, .worker_supply = 12, .army_supply = 1.5 } },
-        .{ .player_id = 1, .values = .{ .game_loop = 160, .minerals = 200, .vespene = 50, .food_used = 50, .food_cap = 60, .worker_supply = 20, .army_supply = 30 } },
+        .{ .player_id = 1, .values = .{ .game_loop = 1, .minerals = 50, .vespene = 0, .food_used = 12, .food_cap = 15, .worker_supply = 12 } },
+        .{ .player_id = 2, .values = .{ .game_loop = 10, .minerals = 100, .vespene = 25, .food_used = 13.5, .food_cap = 20, .worker_supply = 12 } },
+        .{ .player_id = 1, .values = .{ .game_loop = 160, .minerals = 200, .vespene = 50, .food_used = 50, .food_cap = 60, .worker_supply = 20 } },
     };
     // Deliberately reverse metadata order and use noncontiguous protocol IDs.
     samples[0].player_id = 3;
@@ -309,7 +309,6 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
         .food_used = used,
         .food_cap = @min(200, @as(f32, @floatFromInt(values[3] orelse return error.MissingPlayerStats)) / 4096),
         .worker_supply = workers,
-        .army_supply = @max(0, used - @as(f32, @floatFromInt(workers))),
     } };
 }
 
