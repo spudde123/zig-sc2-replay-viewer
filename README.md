@@ -1,38 +1,44 @@
 # zig-sc2-replay-watcher
 
-A Zig 0.17 Linux replay viewer. Headless SC2 renders the game and minimap through
-EGL or OSMesa; Sokol displays those images in an OpenGL window. Playback uses
-explicit stepping, not realtime mode.
+A Linux SC2 replay viewer built with Zig 0.17. SC2 renders the game and minimap;
+the viewer adds playback controls, chat, player resources, production, unit and
+structure counts, and selected-unit details.
+
+## Requirements
+
+- Headless Linux **SC2 4.10 / build 75689**, with matching replay and game data.
+- Replays with **exactly two non-observer participants**.
+- Required map data already installed: Linux SC2 cannot download maps automatically.
+- A working graphics driver and an X11 or XWayland session.
+
+SC2 uses EGL for rendering, or OSMesa for software rendering. Proprietary drivers
+may require their vendor's EGL implementation rather than Mesa.
 
 ## Build and run
 
+Install **Zig 0.17.0**, initialize the submodule, and build:
+
 ```sh
 git submodule update --init --recursive
-zig build
-zig build run -- \
+zig build -Doptimize=ReleaseSafe
+zig build run -Doptimize=ReleaseSafe -- \
   --sc2 /path/to/StarCraftII \
-  --replay /path/to/replay.SC2Replay \
-  --player 0
+  --replay /path/to/replay.SC2Replay
 ```
 
 Alternatively, run `zig-out/bin/zig_sc2_replay_watcher` with the same arguments.
-`--sc2` is the installation root containing `Versions/` and `SC2Data/`. Relative
-replay paths are resolved before launching SC2.
+`--sc2` is the installation root containing `Versions/` and `SC2Data/`.
 
-On Fedora, build dependencies are typically provided by:
+On Fedora, install build dependencies with:
 
 ```sh
 sudo dnf install libX11-devel libXi-devel libXcursor-devel mesa-libGL-devel alsa-lib-devel
 ```
 
-The viewer uses X11/GLX; XWayland works on Wayland desktops. SC2 additionally
-needs a compatible EGL implementation, or an OSMesa library for software
-rendering.
+### Running a release binary
 
-### Runtime dependencies (downloaded releases)
-
-Zig and development packages are not needed to run a release binary. Install
-these viewer graphics libraries and Mesa's EGL implementation if missing:
+Release binaries do not require Zig or development packages. Install missing
+runtime libraries:
 
 ```sh
 # Ubuntu / Debian
@@ -42,339 +48,160 @@ sudo apt install libx11-6 libxi6 libxcursor1 libgl1 libegl1 libegl-mesa0 libbz2-
 sudo dnf install libX11 libXi libXcursor mesa-libGL mesa-libEGL bzip2-libs
 ```
 
-The player-stat reader dynamically loads the system `libbz2` runtime to decompress
-replay tracker data. No bzip2 development headers, external command or Python
-are required. On Arch, install `bzip2`. Without a usable library, statistics are
-marked unavailable and replay playback continues normally.
+These packages do not install SC2 or all of its dependencies. The `libbz2` runtime
+is used for replay statistics; on Arch, install `bzip2`. No Python or external
+bzip2 command is needed. If statistics cannot be read, playback continues.
 
-A working graphics driver and X11/XWayland session are also required. Systems
-using proprietary drivers may need their vendor's EGL implementation instead
-of Mesa. These packages do not install SC2 or all of SC2's own dependencies.
+On Ubuntu / Debian x86-64, add:
 
-On Ubuntu / Debian x86-64, pass
-`--egl /usr/lib/x86_64-linux-gnu/libEGL.so.1`; the default is Fedora's
-`/usr/lib64/libEGL.so.1`.
+```sh
+--egl /usr/lib/x86_64-linux-gnu/libEGL.so.1
+```
 
-The viewer assumes the headless Linux SC2 4.10 client and matching replays/game
-data. Required map data must already be installed; Linux
-SC2 cannot download maps automatically.
+The default EGL path is Fedora's `/usr/lib64/libEGL.so.1`.
 
 ## Controls
 
-| Key | Action |
+| Control | Action |
 | --- | --- |
 | Space | Pause/resume |
-| Up / Down (also `]` / `[`) | Faster/slower: 0.25x–16x |
+| Up / Down, or `]` / `[` | Faster/slower: 0.25x–16x |
 | Right Arrow | Advance one simulation loop while paused |
-| C | Show/hide chat |
-| P | Show/hide the production/units/structures panel |
 | 1 / 2 / 3 | Production + research / units / structures tabs |
-| Hold WASD | Smooth camera pan; combine keys for diagonals |
-| Mouse wheel / `+` / `-` | Zoom in/out (keypad `+` / `-` also work) |
-| Click / hold and drag minimap | Move the camera; zoom is preserved |
-| Click a unit in the game image | Select it and show orders / target arrows |
-| Right-click / click empty game space | Clear unit selection |
+| P | Show/hide the selected tab's panel |
+| C | Show/hide chat |
+| Hold WASD | Pan the camera; diagonals supported |
+| Mouse wheel / `+` / `-` | Zoom; keypad `+` / `-` also work |
+| Click or drag minimap | Move the camera, preserving zoom |
+| Click a unit | Show details and its first reported order/target |
+| Right-click / click empty space | Clear selection |
 | Escape / close window / Ctrl+C | Exit and clean up SC2 |
+
+Requested playback speeds are targets: busy scenes may run slower. The HUD shows
+game time, duration, speed/state and loop counts. The final frame stays visible
+when the replay ends.
 
 ### Custom keybinds
 
-At startup, the viewer optionally reads `keybinds.conf` from the **working
-directory** (where you launch it, not necessarily where the executable lives).
-Copy `keybinds.conf.example` to `keybinds.conf`, or create a file with only the
-controls you want to change:
+Copy `keybinds.conf.example` to `keybinds.conf` in the **directory you launch
+from**, or create a file containing only the overrides you need:
 
 ```ini
-# Replace WASD with IJKL and pause with P.
-pause = P
+pause = TAB
 pan_up = I
 pan_left = J
 pan_down = K
 pan_right = L
 ```
 
-Each `action = key, key` line replaces that action's bindings; omitted actions
-retain their defaults. Available actions are `pause`, `speed_up`, `speed_down`,
-`step`, `zoom_in`, `zoom_out`, `quit`, `toggle_chat`, `toggle_production`,
-`tab_production`, `tab_units`, `tab_structures`, `pan_up`, `pan_left`,
-`pan_down`, and `pan_right`. Use `none` to unbind an action. Up to four keys per action are
-supported; names are case-insensitive and `#` starts a comment.
+Each line replaces one action's bindings; omitted actions retain their defaults.
+Use comma-separated keys for aliases, `none` to disable an action, and `#` for
+comments. Names are case-insensitive. Modifier combinations such as `Ctrl+P`
+are not supported; mouse controls are fixed.
 
-Key names follow Sokol's keycodes: letters, digits, `SPACE`, `ESCAPE`, `ENTER`,
-`TAB`, `UP`, `DOWN`, `LEFT`, `RIGHT`, `F1`–`F25`, `PAGE_UP`, `PAGE_DOWN`,
-`LEFT_BRACKET`, `RIGHT_BRACKET`, `EQUAL`, `MINUS`, `KP_ADD`, `KP_SUBTRACT`, etc.
-`+`/`=` alias `EQUAL`, `-` aliases `MINUS`, and `[`/`]` alias the bracket keys.
-These are keycodes, not typed characters; keyboard-layout differences may apply.
-Modifier combinations such as `Ctrl+P` are not supported. Mouse-wheel zoom and
-left-click minimap navigation remain fixed. Hold the left button and drag to
-follow the pointer; dragging outside the minimap clamps to its edges. Releasing
-the button, leaving the window, or losing focus stops dragging. Minimap dragging
-takes priority over held keyboard pan keys.
+Keys cannot be shared between actions. When moving a key, also rebind or disable
+its original action. Invalid configuration restores **all defaults** with a
+warning. Changes take effect after restarting.
 
-If the file is missing, defaults are used silently. An unreadable or invalid file
-(including unknown names, duplicate actions, conflicting keys after merging with
-defaults, or files exceeding the 16 KiB read limit) falls back to **all defaults**
-with a warning. To move a key to another action, also rebind or disable its old
-action. Changes take effect after restarting; `--help` lists the defaults.
+## Panels and unit details
 
-The upper-left HUD shows game time / duration as `mm:ss`, playback speed and
-state, and loop counts. Keybind hints are not displayed. The window title stays static.
-Time is derived from the displayed frame's loop count at 22.4 loops per second,
-not wall-clock time. Minutes continue past 59 for long replays. `1x` playback
-targets that same loop rate; actual speed depends on SC2 and frame-production
-performance. Advancement batches are capped at 16 loops to favor more frequent
-image updates over large catch-up jumps. In busy scenes, the requested speed
-may not be reached; excess catch-up debt is discarded rather than accumulated.
-The final frame stays visible at replay end.
+### Production, units and structures
 
-The viewer accepts exactly two non-observer participants, checked using SC2's
-replay metadata before starting the replay. Other participant counts cause an
-error and clean shutdown, independently of whether optional stats parsing works.
-Actual player IDs are preserved and mapped to two internal slots, rather than
-used as zero-based array indices; IDs need not be contiguous. Observer and neutral owner IDs are not participant slots.
+The top-left panel has tabs **1P+R 2U 3S**, selectable by number keys or clicking
+the titles. Selecting a tab opens the panel; **P** or **Hide / Show** collapses it.
 
-The minimap shows player names anchored at their starting bases (or first owned
-unit if no base is available). These white labels identify ownership without
-assuming SC2's rendered color mapping, including in mirror matchups. Players
-whose starting units are not visible have no marker. Labels and navigation use
-the playable-area crop and aspect-ratio padding of SC2's square minimap; names
-use the HUD's ASCII bitmap font.
+- **Production + research:** construction, active training, morphs and research,
+  grouped per player/result with progress bars. Zero-progress queued jobs are
+  excluded.
+- **Units / structures:** grouped per player/type, for example
+  `Marine: R:55 B:2`. **R** means ready; **B** means in progress. Ready counts
+  are green, building counts amber, and zeros muted gray. Reported passengers
+  inside bunkers and transports are included without double-counting.
 
-Camera movement stops 12 world units inside the reported playable rectangle,
-using the same bounds for keyboard pan, minimap navigation and zoom requests.
-This conservative margin avoids silent engine camera clamping near map edges;
-projection uses the constrained coordinates actually sent to SC2. On unusually
-small maps, an axis narrower than 24 units is fixed at its centre. Custom camera
-bounds can differ from playable bounds, so this is not an exact engine-derived
-limit for every map.
+Lists grow toward the minimap, share space between players, and show overflow
+counts when space runs out. Counts reflect reported units, not hidden units
+inferred from earlier observations.
 
-## Chat
+### Player resources
 
-A bottom-right panel shows replay chat with muted-gray game times, light-blue
-sender names and white message text, including wrapped continuation lines.
-Press **C** or click **Hide chat / Show chat** below the panel to toggle its
-visibility (hidden initially). A newly received message automatically opens the
-panel if it is hidden; after manually hiding it, it stays hidden until another
-new message arrives. Existing history alone does not reopen it. Rebind the toggle
-with `toggle_chat = F4` in `keybinds.conf`. Hiding it does not stop message
-collection or clear recent history.
-The button also works while loading, paused, and at replay end; visibility is
-local to the GUI and resets when the viewer restarts.
-Messages stay visible while paused and at replay end. Unknown names fall back to
-`Player N` (or `Unknown` if the sender ID is missing). Times use the observation
-that delivered the message; SC2 does not provide exact chat event timestamps.
+The top-right panel shows each player's minerals, vespene, workers and supply:
 
-The panel wraps text, showing up to the newest 12 lines as space allows and at
-most three lines per message; longer text ends in `...`. Messages have a 3-pixel
-gap between them, while wrapped lines within a message stay together. Recent history and the worker's independent
-chat queue each hold 128 messages. Overflow retains the newest messages and marks
-its header `Chat *`. Message text is copied before SC2 response memory resets,
-bounded to 512 bytes, and is not lost when newer images replace pending frames.
-The existing bitmap renderer replaces unsupported Unicode characters with `?`.
-There is no scrollback control yet. Very small windows hide the panel rather than
-covering the minimap.
+```text
+M: 125  V: 50
+W: 60 S: 84 / 92
+```
 
-## Player resources
+These are **recorded replay samples**, normally every 160 loops—about
+**7.14 seconds at Faster speed**. The viewer uses the latest sample at or before
+the displayed frame, without interpolation, so values may lag gameplay by
+roughly seven seconds. Workers are the regular-worker count; total used supply
+includes supply reserved for production. Fractional supply is preserved, and
+the supply cap is limited to 200.
 
-A separate top-right panel shows sampled minerals (`M`) and vespene (`V`),
-followed by `W: workers S: used / cap` for each player, independently of observer
-`PlayerCommon` data. Workers are the recorded regular-worker count (each costs
-one supply). Total used supply includes supply reserved for production; no army
-supply estimate is shown.
-It hides when there is too little space to avoid overlapping the other panels.
-A small native parser reads only `SPlayerStatsEvent` from the replay's tracker
-stream, targeting base build **75689** and its MPQ v3 single-unit files.
-Only uncompressed or bzip2-compressed tracker data is supported.
+Values are pending before the first sample. Unsupported or missing tracker data,
+or an unavailable `libbz2` runtime, shows **Unavailable** without stopping playback.
 
-Samples normally occur every 160 loops (about 7.14 seconds at Faster speed).
-The viewer uses the latest sample at or before the displayed image's loop.
-Values can therefore lag gameplay by roughly seven seconds between samples;
-no sample age is displayed. Values come from **recorded samples, not live unit
-counts or interpolated balances**. Fractional supply is preserved, and recorded
-food-made is clamped
-to the standard melee cap of 200. Before the first sample, values are pending.
-Missing tracker data, other builds/formats, or missing `libbz2` disable stats
-without preventing replay playback.
+### Chat
 
-Resources remain visible when production is collapsed with **P**. Pausing
-freezes the displayed values. Parsing happens once on the worker; each published frame
-owns its selected values, with no GUI references into parser storage.
+Chat starts hidden and **opens automatically when a new message arrives**.
+After hiding it, existing history alone does not reopen it. **C** or the
+**Hide chat / Show chat** button toggles visibility without clearing history.
 
-## Production, units and structures
+Messages show gray timestamps, blue sender names and white text, with spacing
+between messages. Long messages wrap and may be shortened with `...`. Only
+recent history is shown; there is no scrollback yet. Unsupported Unicode is
+replaced with `?`.
 
-The top-left panel keeps game time, speed/state and loop counts above tabs titled
-**1P+R 2U 3S**. Press **1**, **2**, or **3** (or click their titles) for
-production + research, units, or structures. Selecting a tab opens the panel;
-the active title is highlighted. Its **Hide / Show** button and **P** collapse
-the selected view without hiding playback information. Tab selection is retained
-while collapsed. Rebind with `tab_production`, `tab_units`, `tab_structures`
-and `toggle_production`. Controls ignore key repeats and also work while loading,
-paused and after replay end.
+### Selected units
 
-Units and structures are grouped by owner and unit type, with rows such as
-`Marine: R:55 B:2`. `R` counts completed, visible reported units;
-`B` reuses the production view's active entries (not zero-progress queued jobs).
-Ready counts are soft green, building counts amber, and zero counts muted gray;
-unit names remain off-white and the labels retain the distinction without color.
-Structure classification comes from SC2's unit-type attributes and is copied
-into each snapshot. Reported bunker/transport passengers are counted as ready
-units, attributed to their carrier's owner, and deduplicated by tag against
-top-level units and other passenger records. Counts do not infer hidden or
-unreported units. Modes with distinct unit type IDs have distinct rows.
+Click a visible unit for its name, owner, HP/shields/energy, resource or harvester
+information where applicable, and upgrade levels such as `Upg: 2/1/3`.
+All-zero upgrade levels are hidden.
 
-In the production + research tab, each player has a separate section. Unfinished units/structures, active training
-and production morphs use green progress bars; research uses purple bars and an
-`R:` label. Identical results share a row with up to three short bars (furthest
-along first), followed by `N more` for additional active entries. Zero-progress
-queued orders and completed jobs are excluded. Worker build commands do not
-count again beside their unfinished structures; eggs/cocoons and ongoing morphs
-are represented by their resulting unit when known.
+Only the first reported order and its target arrow are shown; additional orders
+appear as a count. Missing or hidden targets are not drawn. Selection follows
+the unit until it disappears or becomes hidden.
 
-Training and upgrade names come from matching SC2 game data, with known ability
-names as fallbacks rather than guessed results. The panel uses the same owned
-observation as the displayed image, so pausing freezes it and completed,
-cancelled or destroyed entries disappear on the next observation. Missing
-production information for a perspective is not inferred.
+Panels and details update with the displayed observation and remain usable while
+paused. Small windows may hide panels rather than overlap other controls.
 
-Panel height is bounded above the minimap/chat. Limited space is shared between
-players, prioritizing research, with per-player overflow summaries. Very small
-windows hide production rather than overlap other controls. Panel clicks and
-wheel events do not select units or zoom the camera underneath it.
+## Options and limitations
 
-## Unit orders
+Run `zig_sc2_replay_watcher --help` for all options. Common options:
 
-Click a visible unit to highlight its projected footprint and show a text box
-with its unit type, tag, owner and first reported order. Only that order's target
-is drawn, using a yellow arrow. Additional orders are retained in the snapshot
-but shown only as a count, not extra text or arrows. Training/targetless orders show text and
-progress but no arrow. Missing or hidden targets are marked unavailable rather
-than drawing toward stale positions. “No orders reported” does not prove the
-unit is idle; the API may omit orders for a perspective.
-
-The details box includes green HP, blue shield, and purple energy bars with
-current/max values when a positive maximum is reported. Empty applicable bars
-remain visible. Positive mineral/vespene contents are shown as integers, and
-units with `ideal_harvesters > 0` show `Harvesters: assigned / ideal`.
-If any upgrade level is nonzero, `Upg: attack/armor` is shown, with a third shield
-level for shield-bearing units (or when a shield upgrade is reported). All-zero
-upgrade levels are omitted. These values update with the displayed observation, including while paused after a
-camera refresh.
-
-Selection follows the unit tag across frames, pan and zoom. Right-click or click
-empty game space to clear it; losing the unit/vision also clears selection.
-Selection works while paused and at replay end, and never sends game commands.
-HUD/chat/minimap controls take priority over game-image picking. The order box
-tries to stay near its unit without covering UI panels; it hides on cramped
-windows or when its unit is offscreen.
-
-Images, camera commands, units and orders cross the worker/GUI boundary as one
-owned snapshot, including production progress and copied product names; chat
-remains an independent event FIFO. Projection never reads
-the worker's ahead-of-image camera request state.
-
-## Options
-
-- `--player ID`: perspective (default: `0`, all-player observer view). Other IDs
-  select a participant's perspective and vision.
-- `--egl PATH`: override SC2's EGL library (default: `/usr/lib64/libEGL.so.1`).
-- `--osmesa PATH`: use OSMesa instead of EGL for SC2 rendering.
-- `--disable-fog`: forward SC2's startup fog flag. This is not a reliable RGB
-  visibility switch; use `--player 0` to see both players.
-- `--port PORT`: API port (default: 5000).
-- `--width N --height N`: SC2 render resolution (default: 640×480).
-- `--camera-distance N`: initial observer camera distance (default: 40, viewer
-  range: 10–100). Smaller values zoom in; larger values zoom out. Works in probe
-  mode too. Zoom remains available while paused, but not after the replay ends.
-  Distances 20, 40, and 80 were verified to change the RGB view on Linux SC2 4.10.
-- `--projection-markers`: draw projected raw unit anchors for camera validation
-  (off by default, up to 4096 onscreen markers).
+- `--player ID`: perspective; default **0** shows both players. Other IDs select
+  a participant's perspective. Changing perspective requires restarting.
+- `--egl PATH` / `--osmesa PATH`: select SC2's rendering library.
+- `--width N --height N`: render resolution; default 640×480.
+- `--camera-distance N`: initial zoom distance; default 40, range 10–100.
+- `--port PORT`: API port; default 5000.
 - `--verbose-sc2`: show SC2's startup/rendering diagnostics.
-- `--help`: list all options.
 
-Changing perspective requires restarting the viewer. Seeking, automatic camera
-following, audio, and a full replay HUD are not implemented. SC2 can silently
-clamp camera requests near map edges.
-
-## GitHub builds and releases
-
-`.github/workflows/build.yml` builds and tests on pushes to `main`, and can also
-be run manually from **Actions → Build and release → Run workflow**.
-
-- Leave `release_tag` empty to produce a downloadable Actions artifact only.
-- Enter a new tag such as `v0.1.0` to publish a GitHub Release with the archive
-  and its SHA-256 checksum. The tag points to the selected workflow commit.
-- Select `prerelease` for preview releases. Existing tags/releases are not
-  overwritten; use a new version to publish another build.
-
-CI pins Zig 0.17.0 and Ubuntu 22.04, targeting baseline x86-64 and glibc 2.35.
-Archives contain the viewer, README, project license, and third-party license
-notices—not SC2 or replay data.
-Compatible OpenGL/X11 runtime libraries are still required. On Ubuntu, override
-SC2's Fedora-specific EGL default with
-`--egl /usr/lib/x86_64-linux-gnu/libEGL.so.1`.
-
-The zig-sc2 submodule commit must be pushed to its remote before publishing the
-parent repository; CI checks out that exact commit recursively. No custom
-release secret is needed: the release job uses GitHub's built-in token with
-`contents: write` permission.
+Use `--player 0` for the all-player view; `--disable-fog` is not a reliable RGB
+visibility switch. Camera movement is restricted near map edges. Seeking,
+automatic camera following and audio are not implemented.
 
 ## Tests and diagnostics
 
 ```sh
-zig build test                       # no SC2/display required
-zig build -Doptimize=ReleaseSafe
+zig build test  # no SC2 or display required
 
-# Render through SC2 without opening the viewer; optionally save its image:
+# Check SC2 rendering without opening the viewer:
 zig build run -- \
   --sc2 /path/to/StarCraftII \
   --replay /path/to/replay.SC2Replay \
-  --player 0 --probe --probe-loops 64 --capture /tmp/sc2-frame.ppm
+  --probe --probe-loops 64 --capture /tmp/sc2-frame.ppm
 ```
 
-`--quit-after SECONDS` automatically exits the GUI for smoke testing. Captures
-save SC2's main image, not the viewer's HUD, chat, unit overlays, or minimap layout.
-
-## Structure
-
-Entry points (`main.zig`, `root.zig`) and CLI parsing remain at the `src/` root.
-Files are grouped by responsibility:
-
-- `src/replay/`: SC2 I/O, playback timing, owned observations/images, player
-  metadata, the production ability catalog and the narrow replay-stat reader.
-- `src/input/`: keybindings, held-key camera panning and minimap drag state.
-- `src/camera/`: world/image projection and minimap coordinate transforms.
-- `src/ui/`: presentation-only formatting/layout and Sokol rendering.
-
-- `lib/zig-sc2`: submodule containing the protocol/client and `ReplaySession`
-  process/version lifecycle. Replay operations are `observe()`, `advance()`,
-  and `close()`; the existing bot runner retains its defaults.
-- `src/replay/replay_worker.zig`: owns SC2 I/O, playback timing, a latest-frame mailbox,
-  and a separate FIFO chat queue. Chat is collected from every observation,
-  including initialization and camera-only observations.
-- `src/replay/replay_data.zig`: value-owned player/chat data and frame-aligned unit/order
-  scenes, independent of protocol and rendering types. Scenes use sorted units
-  and flattened order arrays; chat uses bounded event queues.
-- `src/replay/observation_data.zig`: copies borrowed raw observations, samples terrain,
-  and attaches the camera command matching the image.
-- `src/camera/camera_projection.zig`: empirical 3D projection, exact letterboxing,
-  screen-space picking and line clipping.
-- `src/replay/player_stats.zig`: extracts the build-75689 stat timeline from MPQ;
-  uses dynamically loaded native libbz2 and skips unrelated tracker events.
-- `src/ui/player_stats_view.zig`: bounded player-resource formatting.
-- `src/ui/chat_view.zig`, `src/ui/order_view.zig`, `src/ui/production_view.zig`,
-  `src/ui/inventory_view.zig`: bounded formatting and grouped production/inventory layouts.
-- `src/ui/unit_overlay.zig`: GUI-thread selection footprint, arrows and order box.
-- `src/ui/renderer.zig`: owns Sokol textures and composes the world image/overlays,
-  minimap, playback HUD, production/research and chat. GUI state holds the selected tag and recent
-  chat history; it never retains SC2 response pointers.
-- `src/cli.zig`, `src/replay/playback.zig`, `src/replay/image.zig`: argument parsing, stepping
-  and time formatting, and image conversion/ownership.
+`--quit-after SECONDS` closes the GUI automatically for smoke testing. Captures
+save SC2's image, not the viewer's panels or overlays.
 
 ## License
 
-The viewer's original code is [MIT licensed](LICENSE). Dependencies retain their
-own licenses: zig-sc2 ([MIT](lib/zig-sc2/LICENSE)), Sokol/sokol-zig
+The viewer is [MIT licensed](LICENSE). Dependencies retain their own licenses:
+zig-sc2 ([MIT](lib/zig-sc2/LICENSE)), Sokol/sokol-zig
 ([zlib](licenses/sokol.txt)), and Zig's standard library/runtime
-([MIT](licenses/zig.txt)). Release archives include these notices in `licenses/`
-alongside the project's `LICENSE`. Replay-format/algorithm references are
-mpyq (BSD-2-Clause) and Blizzard s2protocol (MIT); their notices are included as
-`licenses/mpyq.txt` and `licenses/s2protocol.txt`.
+([MIT](licenses/zig.txt)). Replay-format references are mpyq
+([BSD-2-Clause](licenses/mpyq.txt)) and Blizzard s2protocol
+([MIT](licenses/s2protocol.txt)). Release archives include the project license
+and third-party notices, but not SC2 or replay data.
