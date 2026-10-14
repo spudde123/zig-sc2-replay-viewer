@@ -260,6 +260,7 @@ pub const Renderer = struct {
         for (layout.lines[0..layout.count], 0..) |*line, i| {
             text.origin((rect.x + 10) / cell, (rect.y + 20 + @as(f32, @floatFromInt(i)) * 14) / cell);
             text.home();
+            if (layout.headings[i]) text.color3b(170, 200, 230) else text.color3b(235, 235, 235);
             text.puts(std.mem.sliceTo(line, 0));
         }
     }
