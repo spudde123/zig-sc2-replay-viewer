@@ -1,6 +1,8 @@
 const std = @import("std");
 
 pub const speeds = [_]f64{ 0.25, 0.5, 1, 2, 4, 8, 16 };
+// Prefer more frequent observations over large catch-up jumps at high speeds.
+const max_step_loops = 16;
 
 pub fn formatGameTime(buffer: []u8, game_loop: u32) std.mem.PrintError![:0]const u8 {
     // 22.4 loops/second = 112/5; integer math avoids rounding at second boundaries.
@@ -31,7 +33,7 @@ pub const Playback = struct {
     /// Clamp elapsed time/debt: a slow renderer never creates an unbounded backlog.
     pub fn due(self: *Playback, elapsed: f64) u32 {
         if (self.paused) return 0;
-        self.budget = @min(32, self.budget + @max(0, @min(elapsed, 0.25)) * 22.4 * self.speed());
+        self.budget = @min(max_step_loops, self.budget + @max(0, @min(elapsed, 0.25)) * 22.4 * self.speed());
         const count: u32 = @intFromFloat(@floor(self.budget));
         self.budget -= @floatFromInt(count);
         return count;
@@ -66,7 +68,7 @@ test "fractional timing, pause, speed limits and bounded backlog" {
     try std.testing.expectEqual(@as(u32, 0), p.due(0));
     for (0..100) |_| p.changeSpeed(true);
     try std.testing.expectEqual(@as(f64, 16), p.speed());
-    try std.testing.expectEqual(@as(u32, 32), p.due(100));
+    try std.testing.expectEqual(@as(u32, 16), p.due(100));
     for (0..100) |_| p.changeSpeed(false);
     try std.testing.expectEqual(@as(f64, 0.25), p.speed());
 }

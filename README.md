@@ -118,7 +118,10 @@ The upper-left HUD shows game time / duration as `mm:ss`, playback speed and
 state, and loop counts. Keybind hints are not displayed. The window title stays static.
 Time is derived from the displayed frame's loop count at 22.4 loops per second,
 not wall-clock time. Minutes continue past 59 for long replays. `1x` playback
-targets that same loop rate; actual speed depends on rendering performance.
+targets that same loop rate; actual speed depends on SC2 and frame-production
+performance. Advancement batches are capped at 16 loops to favor more frequent
+image updates over large catch-up jumps. In busy scenes, the requested speed
+may not be reached; excess catch-up debt is discarded rather than accumulated.
 The final frame stays visible at replay end.
 
 The minimap shows player names anchored at their starting bases (or first owned
