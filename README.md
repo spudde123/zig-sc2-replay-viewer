@@ -149,7 +149,8 @@ limit for every map.
 
 ## Chat
 
-A bottom-right panel shows replay chat with player names and game times.
+A bottom-right panel shows replay chat with muted-gray game times, light-blue
+sender names and white message text, including wrapped continuation lines.
 Press **C** or click **Hide chat / Show chat** below the panel to toggle its
 visibility (hidden initially). A newly received message automatically opens the
 panel if it is hidden; after manually hiding it, it stays hidden until another
@@ -162,8 +163,9 @@ Messages stay visible while paused and at replay end. Unknown names fall back to
 `Player N` (or `Unknown` if the sender ID is missing). Times use the observation
 that delivered the message; SC2 does not provide exact chat event timestamps.
 
-The panel wraps text, showing the newest 12 lines and at most three lines per
-message; longer text ends in `...`. Recent history and the worker's independent
+The panel wraps text, showing up to the newest 12 lines as space allows and at
+most three lines per message; longer text ends in `...`. Messages have a 3-pixel
+gap between them, while wrapped lines within a message stay together. Recent history and the worker's independent
 chat queue each hold 128 messages. Overflow retains the newest messages and marks
 its header `Chat *`. Message text is copied before SC2 response memory resets,
 bounded to 512 bytes, and is not lost when newer images replace pending frames.

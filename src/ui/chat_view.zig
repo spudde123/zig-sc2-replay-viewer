@@ -7,18 +7,24 @@ const formatGameTime = @import("../replay/playback.zig").formatGameTime;
 pub const max_columns = 80;
 pub const max_rows = 12;
 const max_message_rows = 3;
-pub const Line = struct { bytes: [max_columns:0]u8 = @splat(0) };
+pub const Line = struct {
+    bytes: [max_columns:0]u8 = @splat(0),
+    // Endpoints of the timestamp and sender spans within this wrapped row.
+    time_end: usize = 0,
+    sender_end: usize = 0,
+    message_start: bool = false,
+};
 pub const Layout = struct {
     lines: [max_rows]Line = @splat(.{}),
     count: usize = 0,
 
-    fn append(self: *Layout, value: []const u8, limit: usize) void {
+    fn append(self: *Layout, value: []const u8, limit: usize, time_end: usize, sender_end: usize, message_start: bool) void {
         if (limit == 0) return;
         if (self.count == limit) {
             std.mem.copyForwards(Line, self.lines[0 .. limit - 1], self.lines[1..limit]);
             self.count -= 1;
         }
-        var line: Line = .{};
+        var line: Line = .{ .time_end = @min(time_end, value.len), .sender_end = @min(sender_end, value.len), .message_start = message_start };
         @memcpy(line.bytes[0..value.len], value);
         self.lines[self.count] = line;
         self.count += 1;
@@ -80,7 +86,7 @@ pub fn build(history: *const data.ChatQueue, players: *const data.Players, colum
                     if (space > 0) end = start + space;
                 }
             }
-            layout.append(std.mem.trimEnd(u8, formatted[start..end], " "), rows);
+            layout.append(std.mem.trimEnd(u8, formatted[start..end], " "), rows, time.len -| start, (time.len + 1 + name.len + 2) -| start, message_rows == 0);
             start = end;
             message_rows += 1;
             if (message_rows == @min(max_message_rows, rows) and start < formatted.len) {
@@ -104,6 +110,11 @@ test "chat labels include game time, names, unknown senders and empty messages" 
     const layout = build(&history, &players, 80, 12);
     try std.testing.expectEqual(@as(usize, 3), layout.count);
     try std.testing.expectEqualStrings("00:10 GPT: glhf", std.mem.sliceTo(&layout.lines[0].bytes, 0));
+    try std.testing.expect(layout.lines[0].message_start and layout.lines[1].message_start);
+    const first = &layout.lines[0];
+    try std.testing.expectEqualStrings("00:10", first.bytes[0..first.time_end]);
+    try std.testing.expectEqualStrings(" GPT: ", first.bytes[first.time_end..first.sender_end]);
+    try std.testing.expectEqualStrings("glhf", std.mem.sliceTo(&first.bytes, 0)[first.sender_end..]);
     try std.testing.expectEqualStrings("00:20 Player 2: hi", std.mem.sliceTo(&layout.lines[1].bytes, 0));
     try std.testing.expectEqualStrings("00:00 Unknown: (empty message)", std.mem.sliceTo(&layout.lines[2].bytes, 0));
 }
@@ -118,7 +129,13 @@ test "chat wraps safely, replaces control/Unicode text and bounds long messages"
     history.push(data.ChatMessage.init(1, 0, &long));
     const wrapped = build(&history, &players, 20, 12);
     try std.testing.expect(wrapped.count <= 6);
-    for (wrapped.lines[0..wrapped.count]) |line| try std.testing.expect(std.mem.sliceTo(&line.bytes, 0).len <= 20);
+    for (wrapped.lines[0..wrapped.count]) |line| {
+        const len = std.mem.sliceTo(&line.bytes, 0).len;
+        try std.testing.expect(len <= 20);
+        try std.testing.expect(line.time_end <= line.sender_end and line.sender_end <= len);
+    }
+    try std.testing.expectEqual(@as(usize, 0), wrapped.lines[wrapped.count - 1].sender_end);
+    try std.testing.expect(!wrapped.lines[wrapped.count - 1].message_start);
     try std.testing.expect(std.mem.endsWith(u8, std.mem.sliceTo(&wrapped.lines[wrapped.count - 1].bytes, 0), "..."));
     const tiny = build(&history, &players, 1, 1);
     try std.testing.expectEqual(@as(usize, 1), tiny.count);

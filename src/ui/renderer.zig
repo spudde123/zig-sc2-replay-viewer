@@ -362,10 +362,29 @@ pub const Renderer = struct {
             text.home();
             text.puts(if (columns >= 16) "No messages yet." else "(empty)");
         } else {
-            for (layout.lines[0..layout.count], 0..) |*line, i| {
-                text.origin((rect.x + 10) / cell, (rect.y + 32 + @as(f32, @floatFromInt(i)) * cell) / cell);
+            const message_gap: f32 = 3;
+            // Keep the newest rows that fit, accounting for gaps only between messages.
+            var first = layout.count;
+            var used_height: f32 = 0;
+            while (first > 0) {
+                const needed = cell + (if (first < layout.count and layout.lines[first].message_start) message_gap else 0);
+                if (used_height + needed > rect.height - 40) break;
+                used_height += needed;
+                first -= 1;
+            }
+            var y = rect.y + 32;
+            for (layout.lines[first..layout.count], 0..) |*line, i| {
+                if (i > 0 and line.message_start) y += message_gap;
+                text.origin((rect.x + 10) / cell, y / cell);
                 text.home();
-                text.puts(std.mem.sliceTo(&line.bytes, 0));
+                const value = std.mem.sliceTo(&line.bytes, 0);
+                text.color3b(160, 165, 175);
+                text.putr(value, @intCast(line.time_end));
+                text.color3b(170, 200, 230);
+                text.putr(value[line.time_end..], @intCast(line.sender_end - line.time_end));
+                text.color3b(255, 255, 255);
+                text.puts(value[line.sender_end..]);
+                y += cell;
             }
         }
     }
