@@ -128,6 +128,14 @@ whose starting units are not visible have no marker. Labels and navigation use
 the playable-area crop and aspect-ratio padding of SC2's square minimap; names
 use the HUD's ASCII bitmap font.
 
+Camera movement stops 12 world units inside the reported playable rectangle,
+using the same bounds for keyboard pan, minimap navigation and zoom requests.
+This conservative margin avoids silent engine camera clamping near map edges;
+projection uses the constrained coordinates actually sent to SC2. On unusually
+small maps, an axis narrower than 24 units is fixed at its centre. Custom camera
+bounds can differ from playable bounds, so this is not an exact engine-derived
+limit for every map.
+
 ## Chat
 
 A bottom-right panel shows replay chat with player names and game times.

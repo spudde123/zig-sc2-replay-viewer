@@ -6,6 +6,7 @@ const player_labels = @import("player_labels.zig");
 const data = @import("replay_data.zig");
 const observation_data = @import("observation_data.zig");
 const minimap_mapping = @import("../camera/minimap_mapping.zig");
+const Bounds = @import("../camera/camera_bounds.zig").Bounds;
 
 pub const Camera = struct {
     x: f32,
@@ -38,6 +39,7 @@ pub const Worker = struct {
     map_width: f32 = 256,
     map_height: f32 = 256,
     minimap_mapping: minimap_mapping.Mapping = .{},
+    camera_bounds: Bounds = .{},
     camera: Camera = .{ .x = 128, .y = 128 },
     requested_camera: ?Camera = null,
     playback: Playback = .{},
@@ -56,7 +58,7 @@ pub const Worker = struct {
         if (!self.ready or self.ended) return;
         var camera = self.requested_camera orelse self.camera;
         camera.zoom(steps);
-        self.requested_camera = camera;
+        self.requestCamera(camera);
     }
 
     /// Called by the GUI while holding the mutex. Snapshot before assigning the
@@ -65,9 +67,25 @@ pub const Worker = struct {
     pub fn requestPosition(self: *Worker, x: f32, y: f32) void {
         if (!self.ready or self.ended) return;
         var camera = self.requested_camera orelse self.camera;
-        camera.x = std.math.clamp(x, 0, self.map_width);
-        camera.y = std.math.clamp(y, 0, self.map_height);
-        self.requested_camera = camera;
+        camera.x = x;
+        camera.y = y;
+        self.requestCamera(camera);
+    }
+
+    /// All movement sources pass through this gate while holding the mutex.
+    /// Keep the submitted pose and the projection pose identical; do not accrue
+    /// movement beyond our conservative limits or send unchanged requests.
+    pub fn requestCamera(self: *Worker, requested: Camera) void {
+        if (!self.ready or self.ended or !std.math.isFinite(requested.x) or
+            !std.math.isFinite(requested.y) or !std.math.isFinite(requested.distance)) return;
+        var camera = requested;
+        const point = self.camera_bounds.clamp(camera.x, camera.y);
+        camera.x = point.x;
+        camera.y = point.y;
+        camera.distance = std.math.clamp(camera.distance, 10, 100);
+        const pending = self.requested_camera orelse self.camera;
+        if (std.meta.eql(camera, pending)) return;
+        self.requested_camera = if (std.meta.eql(camera, self.camera)) null else camera;
     }
 
     /// Normalized square RGB minimap coordinates, including letterboxing.
@@ -149,8 +167,12 @@ pub const Worker = struct {
         appendChat(&self.pending_chat, obs);
         self.unlock();
         const labels = player_labels.capture(session.players[0..session.player_count], obs, mapping);
+        const bounds = Bounds.fromPlayable(mapping);
         var camera = initialCamera(obs, session.map_width, session.map_height);
         camera.distance = self.initial_distance;
+        const initial_point = bounds.clamp(camera.x, camera.y);
+        camera.x = initial_point.x;
+        camera.y = initial_point.y;
         try session.client.setObserverCamera(camera.x, camera.y, camera.distance);
         _ = responses.reset(.retain_capacity);
         obs = try session.observe();
@@ -161,6 +183,7 @@ pub const Worker = struct {
         self.map_width = session.map_width;
         self.map_height = session.map_height;
         self.minimap_mapping = mapping;
+        self.camera_bounds = bounds;
         self.camera = camera;
         self.ready = true;
         self.unlock();
@@ -313,6 +336,7 @@ test "minimap base clicks use playable bounds and preserve pending zoom" {
     worker.map_width = 160;
     worker.map_height = 208;
     worker.minimap_mapping = minimap_mapping.Mapping.fromPlayable(.{ .p0 = .{ .x = 14, .y = 32 }, .p1 = .{ .x = 142, .y = 176 } }, 160, 208);
+    worker.camera_bounds = Bounds.fromPlayable(worker.minimap_mapping);
     worker.camera.distance = 80;
     worker.requestZoom(1);
     worker.requestMinimapPosition(105.33333 / 128.0, 1 - 14.66667 / 128.0);
@@ -343,6 +367,42 @@ test "zoom requests coalesce, preserve position, clamp and stop at replay end" {
     worker.ended = true;
     worker.requested_camera = null;
     worker.requestZoom(1);
+    try std.testing.expect(worker.requested_camera == null);
+}
+
+test "all camera requests share bounds and unchanged edge requests do not queue" {
+    var worker: Worker = .{ .io = undefined, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" }, .ready = true };
+    worker.minimap_mapping = .{ .x = 14, .y = 32, .width = 128, .height = 144 };
+    worker.camera_bounds = Bounds.fromPlayable(worker.minimap_mapping);
+    worker.requestMinimapPosition(1, 1);
+    try std.testing.expectEqual(Camera{ .x = 130, .y = 164 }, worker.requested_camera.?);
+    worker.camera = worker.requested_camera.?;
+    worker.requested_camera = null;
+    worker.requestPosition(1000, 1000);
+    try std.testing.expect(worker.requested_camera == null);
+    // Held-key pan uses this same gate: no accumulating an out-of-range pose.
+    worker.requestCamera(.{ .x = 130.8, .y = 164.8 });
+    try std.testing.expect(worker.requested_camera == null);
+    worker.requestZoom(1);
+    try std.testing.expectEqual(Camera{ .x = 130, .y = 164, .distance = 36 }, worker.requested_camera.?);
+    worker.requestPosition(-100, -100);
+    try std.testing.expectEqual(Camera{ .x = 26, .y = 44, .distance = 36 }, worker.requested_camera.?);
+    const pending = worker.requested_camera;
+    worker.requestPosition(std.math.nan(f32), 100);
+    worker.requestCamera(.{ .x = 100, .y = 100, .distance = std.math.inf(f32) });
+    try std.testing.expectEqual(pending, worker.requested_camera);
+}
+
+test "returning to submitted camera cancels a coalesced move and zoom limits skip requests" {
+    var worker: Worker = .{ .io = undefined, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" }, .ready = true };
+    worker.requestPosition(100, 100);
+    worker.requestPosition(worker.camera.x, worker.camera.y);
+    try std.testing.expect(worker.requested_camera == null);
+    worker.camera.distance = 10;
+    worker.requestZoom(1);
+    try std.testing.expect(worker.requested_camera == null);
+    worker.camera.distance = 100;
+    worker.requestZoom(-1);
     try std.testing.expect(worker.requested_camera == null);
 }
 

@@ -13,6 +13,7 @@ test {
     _ = @import("input/keybinds.zig");
     _ = @import("input/minimap_drag.zig");
     _ = @import("camera/minimap_mapping.zig");
+    _ = @import("camera/camera_bounds.zig");
     _ = @import("replay/replay_data.zig");
     _ = @import("ui/chat_view.zig");
     _ = @import("replay/observation_data.zig");

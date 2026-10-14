@@ -54,7 +54,7 @@ const App = struct {
         if (self.worker.ready and !self.worker.ended and !self.minimap_drag.active) {
             var camera = self.worker.requested_camera orelse self.worker.camera;
             if (self.pan.apply(&camera, dt, self.worker.map_width, self.worker.map_height)) {
-                self.worker.requested_camera = camera;
+                self.worker.requestCamera(camera);
             }
         }
         const failure = self.worker.failure;
