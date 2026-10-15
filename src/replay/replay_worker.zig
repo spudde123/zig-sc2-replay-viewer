@@ -1,5 +1,6 @@
 const std = @import("std");
 const sc2 = @import("zig-sc2");
+const ReplaySession = @import("replay_session.zig").ReplaySession;
 const images = @import("image.zig");
 const Playback = @import("playback.zig").Playback;
 const player_labels = @import("player_labels.zig");
@@ -21,7 +22,7 @@ pub const Camera = struct {
 pub const Worker = struct {
     io: std.Io,
     allocator: std.mem.Allocator,
-    config: sc2.ReplaySession.Config,
+    config: ReplaySession.Config,
     initial_distance: f32 = 40,
     mutex: std.Io.Mutex = .init,
     pending: ?images.Frame = null,
@@ -140,7 +141,7 @@ pub const Worker = struct {
         defer responses.deinit();
         var config = self.config;
         config.required_player_count = data.max_players;
-        var session = try sc2.ReplaySession.open(permanent.allocator(), self.io, config, responses.allocator());
+        var session = try ReplaySession.open(permanent.allocator(), self.io, config, responses.allocator());
         defer session.close();
         self.production_catalog = try @import("production_catalog.zig").Catalog.init(self.allocator, try session.client.getGameData());
         defer {

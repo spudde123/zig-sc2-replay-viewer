@@ -9,6 +9,7 @@ test {
     _ = playback;
     _ = @import("ui/renderer.zig");
     _ = @import("replay/replay_worker.zig");
+    _ = @import("replay/replay_session.zig");
     _ = @import("input/camera_pan.zig");
     _ = @import("input/keybinds.zig");
     _ = @import("input/minimap_drag.zig");

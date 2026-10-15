@@ -1,5 +1,6 @@
 const std = @import("std");
 const sc2 = @import("zig-sc2");
+const ReplaySession = @import("replay_session.zig").ReplaySession;
 const Mapping = @import("../camera/minimap_mapping.zig").Mapping;
 
 pub const Label = struct {
@@ -17,7 +18,7 @@ pub const Labels = struct {
 
 /// Capture once, so names remain anchored at the starting bases throughout playback.
 /// No marker is invented for players whose starting units are unavailable.
-pub fn capture(players: []const sc2.ReplaySession.Player, obs: sc2.sc2p.ResponseObservation, mapping: Mapping) Labels {
+pub fn capture(players: []const ReplaySession.Player, obs: sc2.sc2p.ResponseObservation, mapping: Mapping) Labels {
     var result: Labels = .{};
     if (mapping.width <= 0 or mapping.height <= 0) return result;
     const observation = obs.observation orelse return result;
@@ -78,7 +79,7 @@ test "label names are bounded and unnamed players have distinct fallbacks" {
 }
 
 test "labels use ownership, prefer bases, omit unseen players and own names" {
-    var players = [_]sc2.ReplaySession.Player{ .{ .id = 1 }, .{ .id = 2 }, .{ .id = 3 } };
+    var players = [_]ReplaySession.Player{ .{ .id = 1 }, .{ .id = 2 }, .{ .id = 3 } };
     @memcpy(players[0].name[0..4], "Maru");
     @memcpy(players[1].name[0..4], "Clem");
     var units = [_]sc2.sc2p.Unit{

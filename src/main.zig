@@ -1,7 +1,7 @@
 const std = @import("std");
 pub const std_options: std.Options = .{ .log_level = .info };
 const sokol = @import("sokol");
-const sc2 = @import("zig-sc2");
+const ReplaySession = @import("replay/replay_session.zig").ReplaySession;
 const cli = @import("cli.zig");
 const images = @import("replay/image.zig");
 const replay = @import("replay/replay_worker.zig");
@@ -322,7 +322,7 @@ fn renderProbe(allocator: std.mem.Allocator, io: std.Io, options: cli.Options) !
     defer permanent.deinit();
     var responses = std.heap.ArenaAllocator.init(allocator);
     defer responses.deinit();
-    var session = try sc2.ReplaySession.open(permanent.allocator(), io, options.session, responses.allocator());
+    var session = try ReplaySession.open(permanent.allocator(), io, options.session, responses.allocator());
     defer session.close();
     const first = try session.observe();
     const camera = replay.initialCamera(first, session.map_width, session.map_height);

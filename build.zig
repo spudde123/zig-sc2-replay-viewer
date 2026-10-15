@@ -31,15 +31,5 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const test_run = b.addRunArtifact(tests);
-    const protocol_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = sc2.path("src/render_tests.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    const protocol_run = b.addRunArtifact(protocol_tests);
-    const test_step = b.step("test", "Run unit/protocol tests (no SC2 or display required)");
-    test_step.dependOn(&test_run.step);
-    test_step.dependOn(&protocol_run.step);
+    b.step("test", "Run viewer tests (no SC2 or display required)").dependOn(&test_run.step);
 }
