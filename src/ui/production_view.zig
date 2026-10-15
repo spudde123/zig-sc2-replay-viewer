@@ -9,6 +9,7 @@ pub const Group = struct {
     owner: i32,
     product: data.Product,
     count: usize = 0,
+    unknown_progress: usize = 0,
     bars: [max_bars]f32 = @splat(0),
 };
 pub const Summary = struct {
@@ -16,7 +17,7 @@ pub const Summary = struct {
     count: usize = 0,
     omitted_items: usize = 0,
 
-    fn add(self: *Summary, owner: i32, product: data.Product, progress: f32) void {
+    fn add(self: *Summary, owner: i32, product: data.Product, progress: ?f32) void {
         var index: usize = 0;
         while (index < self.count) : (index += 1) {
             const group = &self.groups[index];
@@ -31,15 +32,17 @@ pub const Summary = struct {
             self.count += 1;
         }
         const group = &self.groups[index];
-        // Keep the three furthest-along entries, independent of raw ordering.
-        var carry = progress;
-        for (&group.bars) |*bar| {
-            if (carry > bar.*) {
-                const old = bar.*;
-                bar.* = carry;
-                carry = old;
+        // Keep known progress first, furthest along first; unknowns use separate bars.
+        if (progress) |value| {
+            var carry = value;
+            for (&group.bars) |*bar| {
+                if (carry > bar.*) {
+                    const old = bar.*;
+                    bar.* = carry;
+                    carry = old;
+                }
             }
-        }
+        } else group.unknown_progress += 1;
         group.count += 1;
     }
 };
@@ -55,7 +58,7 @@ pub fn summarize(scene: *const data.Scene) Summary {
         const name = std.mem.sliceTo(&unit.name, 0);
         const shell = std.mem.indexOf(u8, name, "Egg") != null or std.mem.indexOf(u8, name, "Cocoon") != null;
         var replaced = false;
-        for (scene.ordersFor(&unit)) |order| {
+        for (scene.ordersFor(&unit), 0..) |order, index| {
             const product = order.product orelse continue;
             const ongoing = active(order.progress);
             const same_type = product.key == unit.type_id;
@@ -66,7 +69,16 @@ pub fn summarize(scene: *const data.Scene) Summary {
                 // build_progress advances. Show its result, not a second Egg row.
                 if (!replaced) summary.add(unit.owner, product, if (ongoing) order.progress else unit.build_progress);
                 replaced = true;
-            } else if (ongoing) summary.add(unit.owner, product, order.progress);
+            } else if (ongoing) {
+                summary.add(unit.owner, product, order.progress);
+            } else if (index == 0 and unit.is_structure and
+                std.math.isFinite(unit.build_progress) and unit.build_progress >= 1 and
+                product.kind == .unit and product.is_structure and product.replaces_construction and order.progress == 0)
+            {
+                // Building upgrades can execute with no order progress in SC2.
+                // Only the first order on a completed source is considered active.
+                summary.add(unit.owner, product, null);
+            }
         }
         if (incomplete and !replaced) {
             summary.add(unit.owner, .{ .key = unit.type_id, .kind = .unit, .name = unit.name, .is_structure = unit.is_structure }, unit.build_progress);
@@ -174,6 +186,47 @@ test "eggs and morphs replace construction, while ordinary construction merges w
     try std.testing.expectEqualStrings("Hatchery", std.mem.sliceTo(&queued.groups[1].product.name, 0));
 }
 
+test "zero-progress building upgrades are shown only as the first order on completed structures" {
+    var source = testUnit(1, 1, 18, 1, "CommandCenter");
+    source.is_structure = true;
+    source.order_count = 1;
+    var orbital = testProduct(132, .unit, "OrbitalCommand");
+    orbital.is_structure = true;
+    orbital.replaces_construction = true;
+    var orders = [_]data.Order{
+        .{ .ability_id = 1516, .progress = 0, .target = .none, .product = orbital },
+        .{ .ability_id = 524, .progress = 0.5, .target = .none, .product = testProduct(45, .unit, "SCV") },
+    };
+    var units = [_]data.Unit{source};
+    const scene: data.Scene = .{ .units = &units, .orders = &orders };
+    const active_upgrade = summarize(&scene);
+    try std.testing.expectEqual(@as(usize, 1), active_upgrade.count);
+    try std.testing.expectEqual(@as(usize, 1), active_upgrade.groups[0].unknown_progress);
+    const layout = build(&active_upgrade, &.{}, 8, 48, 28);
+    try std.testing.expectEqualStrings("OrbitalCommand", std.mem.sliceTo(&layout.rows[1].text, 0));
+    try std.testing.expectEqual(@as(usize, 1), layout.rows[1].unknown_bars);
+    try std.testing.expectEqual(@as(usize, 1), layout.rows[1].bar_count);
+    // A queued upgrade behind training must still be excluded.
+    std.mem.swap(data.Order, &orders[0], &orders[1]);
+    units[0].order_count = 2;
+    const queued = summarize(&scene);
+    try std.testing.expectEqual(@as(usize, 1), queued.count);
+    try std.testing.expectEqual(@as(u64, 45), queued.groups[0].product.key);
+    try std.testing.expectEqual(@as(usize, 0), queued.groups[0].unknown_progress);
+    // Nor should an upgrade queued on an unfinished building replace construction.
+    units[0].order_start = 1;
+    units[0].order_count = 1;
+    units[0].build_progress = 0.5;
+    const unfinished = summarize(&scene);
+    try std.testing.expectEqual(@as(u64, 18), unfinished.groups[0].product.key);
+    try std.testing.expectEqual(@as(usize, 0), unfinished.groups[0].unknown_progress);
+    units[0].build_progress = 1;
+    orders[1].progress = 1;
+    try std.testing.expectEqual(@as(usize, 0), summarize(&scene).count);
+    units[0].order_count = 0; // Cancellation/removal also removes the entry.
+    try std.testing.expectEqual(@as(usize, 0), summarize(&scene).count);
+}
+
 test "bounded grouping handles invalid progress and retains upgrade suffixes in clipped labels" {
     var units: [max_groups + 2]data.Unit = undefined;
     for (&units, 0..) |*unit, i| unit.* = testUnit(i + 1, 1, @intCast(i), 0.5, "Type");
@@ -200,6 +253,7 @@ pub const Row = struct {
     text: [64:0]u8 = @splat(0),
     bars: [max_bars]f32 = @splat(0),
     bar_count: usize = 0,
+    unknown_bars: usize = 0,
     more: usize = 0,
     research: bool = false,
     counts: ?struct { ready_begin: usize, building_begin: usize, ready: usize, building: usize } = null,
@@ -301,6 +355,7 @@ pub fn build(summary: *const Summary, players: *const data.Players, rows: usize,
                     continue;
                 }
                 var row: Row = .{ .kind = .product, .bars = group.bars, .bar_count = @min(group.count, max_bars), .more = group.count - @min(group.count, max_bars), .research = kind == .research };
+                row.unknown_bars = @min(group.unknown_progress, max_bars - @min(group.count - group.unknown_progress, max_bars));
                 const value = std.fmt.bufPrint(&buffer, "{s}{s}", .{ if (row.research) "R: " else "", std.mem.sliceTo(&group.product.name, 0) }) catch unreachable;
                 label(&row, value, label_columns);
                 layout.add(row);

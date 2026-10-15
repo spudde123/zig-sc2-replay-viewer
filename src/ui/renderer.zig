@@ -299,7 +299,19 @@ pub const Renderer = struct {
             } else text.puts(row_text);
             const bars_x = rect.x + rect.width - 206;
             for (row.bars[0..row.bar_count], 0..) |progress, j| {
+                const unknown = j >= row.bar_count - row.unknown_bars;
                 const bar: Rect = .{ .x = bars_x + @as(f32, @floatFromInt(j)) * 40, .y = y + 2, .width = 36, .height = 7 };
+                if (unknown) {
+                    solidRect(.{ .x = bar.x, .y = bar.y - 2, .width = bar.width, .height = 11 }, .{ 0.16, 0.2, 0.24 });
+                    const marker_cell: f32 = 8;
+                    text.canvas(width * 8 / marker_cell, height * 8 / marker_cell);
+                    text.origin((bar.x + (bar.width - marker_cell) / 2) / marker_cell, bar.y / marker_cell);
+                    text.home();
+                    text.color3b(170, 180, 195);
+                    text.puts("?");
+                    text.canvas(width * 8 / 10, height * 8 / 10);
+                    continue;
+                }
                 solidRect(bar, .{ 0.16, 0.2, 0.24 });
                 var fill = bar;
                 fill.width *= progress;

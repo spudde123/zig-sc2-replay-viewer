@@ -165,11 +165,18 @@ fn testUnit(tag: u64, owner: i32, type_id: u32, structure: bool, progress: f32, 
     return u;
 }
 test "inventory merges ready units, deduplicated passengers and existing production counts by owner and type" {
-    var units = [_]data.Unit{ testUnit(1, 3, 21, true, 1, "Barracks"), testUnit(2, 3, 48, false, 1, "Marine"), testUnit(3, 7, 45, false, 1, "SCV"), testUnit(4, 3, 21, true, 0.5, "Barracks") };
+    var units = [_]data.Unit{ testUnit(1, 3, 21, true, 1, "Barracks"), testUnit(2, 3, 48, false, 1, "Marine"), testUnit(3, 7, 45, false, 1, "SCV"), testUnit(4, 3, 21, true, 0.5, "Barracks"), testUnit(6, 3, 18, true, 1, "CommandCenter") };
     var product: data.Product = .{ .key = 48, .kind = .unit };
     @memcpy(product.name[0..6], "Marine");
-    var orders = [_]data.Order{.{ .ability_id = 560, .product = product, .progress = 0.5, .target = .none }};
+    var orbital: data.Product = .{ .key = 132, .kind = .unit, .is_structure = true, .replaces_construction = true };
+    @memcpy(orbital.name[0..14], "OrbitalCommand");
+    var orders = [_]data.Order{
+        .{ .ability_id = 560, .product = product, .progress = 0.5, .target = .none },
+        .{ .ability_id = 1516, .product = orbital, .progress = 0, .target = .none },
+    };
     units[0].order_count = 1;
+    units[4].order_start = 1;
+    units[4].order_count = 1;
     var passengers = [_]data.Passenger{
         .{ .tag = 2, .type_id = 48, .owner = 3, .visible = true },
         .{ .tag = 5, .type_id = 48, .owner = 3, .visible = true },
@@ -182,9 +189,14 @@ test "inventory merges ready units, deduplicated passengers and existing product
     try std.testing.expectEqual(@as(usize, 2), summary.groups[0].ready);
     try std.testing.expectEqual(@as(usize, 1), summary.groups[0].building);
     const structures = summarize(&scene, true);
-    try std.testing.expectEqual(@as(usize, 1), structures.count);
+    try std.testing.expectEqual(@as(usize, 3), structures.count);
     try std.testing.expectEqual(@as(usize, 1), structures.groups[0].ready);
     try std.testing.expectEqual(@as(usize, 1), structures.groups[0].building);
+    try std.testing.expectEqualStrings("CommandCenter", std.mem.sliceTo(&structures.groups[1].product.name, 0));
+    try std.testing.expectEqual(@as(usize, 1), structures.groups[1].ready);
+    try std.testing.expectEqualStrings("OrbitalCommand", std.mem.sliceTo(&structures.groups[2].product.name, 0));
+    try std.testing.expectEqual(@as(usize, 0), structures.groups[2].ready);
+    try std.testing.expectEqual(@as(usize, 1), structures.groups[2].building);
     const players: data.Players = .{};
     const layout = build(&summary, &players, 6, 40);
     try std.testing.expectEqualStrings("Marine: R:2 B:1", std.mem.sliceTo(&layout.rows[1].text, 0));

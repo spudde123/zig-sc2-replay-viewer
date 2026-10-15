@@ -111,8 +111,9 @@ The top-left panel has tabs **1P+R 2U 3S**, selectable by number keys or clickin
 the titles. Selecting a tab opens the panel; **P** or **Hide / Show** collapses it.
 
 - **Production + research:** construction, active training, morphs and research,
-  grouped per player/result with progress bars. Zero-progress queued jobs are
-  excluded.
+  grouped per player/result with progress bars. Building upgrades with no reported
+  progress use a muted `?` bar rather than an estimated percentage.
+  Zero-progress queued jobs are excluded.
 - **Units / structures:** grouped per player/type, for example
   `Marine: R:55 B:2`. **R** means ready; **B** means in progress. Ready counts
   are green, building counts amber, and zeros muted gray. Reported passengers
