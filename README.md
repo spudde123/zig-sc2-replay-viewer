@@ -16,10 +16,9 @@ may require their vendor's EGL implementation rather than Mesa.
 
 ## Build and run
 
-Install **Zig 0.17.0**, initialize the submodule, and build:
+Install **Zig 0.17.0** and build (Zig fetches the pinned dependencies automatically):
 
 ```sh
-git submodule update --init --recursive
 zig build -Doptimize=ReleaseSafe
 zig build run -Doptimize=ReleaseSafe -- \
   --sc2 /path/to/StarCraftII \
@@ -200,7 +199,7 @@ save SC2's image, not the viewer's panels or overlays.
 ## License
 
 The viewer is [MIT licensed](LICENSE). Dependencies retain their own licenses:
-zig-sc2 ([MIT](lib/zig-sc2/LICENSE)), Sokol/sokol-zig
+zig-sc2 ([MIT](https://github.com/spudde123/zig-sc2/blob/master/LICENSE)), Sokol/sokol-zig
 ([zlib](licenses/sokol.txt)), and Zig's standard library/runtime
 ([MIT](licenses/zig.txt)). Replay-format references are mpyq
 ([BSD-2-Clause](licenses/mpyq.txt)) and Blizzard s2protocol

@@ -19,6 +19,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
     b.installArtifact(exe);
+    const sc2_license = b.addInstallFile(sc2.path("LICENSE"), "licenses/zig-sc2.txt");
+    b.getInstallStep().dependOn(&sc2_license.step);
     const run = b.addRunArtifact(exe);
     run.addPassthruArgs();
     b.step("run", "Watch a replay (-- --replay PATH --sc2 INSTALL_ROOT)").dependOn(&run.step);
