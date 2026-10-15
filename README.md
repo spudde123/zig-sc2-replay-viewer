@@ -78,8 +78,8 @@ The default EGL path is Fedora's `/usr/lib64/libEGL.so.1`.
 | Escape / close window / Ctrl+C | Exit and clean up SC2 |
 
 Requested playback speeds are targets: busy scenes may run slower. The HUD shows
-game time, duration, speed/state and loop counts. The final frame stays visible
-when the replay ends.
+game time, duration, speed/state and loop counts. SC2 closes when the replay ends;
+the final frame, unit data, statistics and chat remain available in the viewer.
 
 ### Custom keybinds
 

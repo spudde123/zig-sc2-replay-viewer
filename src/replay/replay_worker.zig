@@ -205,17 +205,22 @@ pub const Worker = struct {
                 revision = self.revision;
                 elapsed = 0;
             }
-            const ended = self.ended;
-            const step_once = self.single_steps > 0 and scheduler.paused and !ended;
+            if (self.ended) {
+                self.unlock();
+                // The final owned frame/chat remain available to the GUI.
+                // Only this task owns session.close(); cancellation follows the
+                // same defer path, including when app shutdown races replay end.
+                return;
+            }
+            const step_once = self.single_steps > 0 and scheduler.paused;
             if (step_once) self.single_steps -= 1;
-            // Observer actions are not valid once SC2 has transitioned to ended.
-            const move = if (ended) null else self.requested_camera;
+            const move = self.requested_camera;
             self.requested_camera = null;
             // Expose the submitted target before I/O so GUI movement keeps accumulating
             // from it while SC2 is busy, rather than restarting from an older position.
             if (move) |position| self.camera = position;
             self.unlock();
-            const count = if (ended) 0 else if (step_once) 1 else scheduler.due(elapsed);
+            const count = if (step_once) 1 else scheduler.due(elapsed);
             if (move) |position| {
                 try session.client.setObserverCamera(position.x, position.y, position.distance);
                 camera = position;
