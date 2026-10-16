@@ -19,11 +19,14 @@ may require their vendor's EGL implementation rather than Mesa.
 Install **Zig 0.17.0** and build (Zig fetches the pinned dependencies automatically):
 
 ```sh
-zig build -Doptimize=ReleaseSafe
-zig build run -Doptimize=ReleaseSafe -- \
+zig build -Doptimize=safe
+zig build run -Doptimize=safe -- \
   --sc2 /path/to/StarCraftII \
   --replay /path/to/replay.SC2Replay
 ```
+
+Zig 0.17 names the optimization modes `debug` (the default), `safe`, `fast`,
+and `small`. Use `safe` for optimized builds with runtime safety checks.
 
 Alternatively, run `zig-out/bin/zig_sc2_replay_watcher` with the same arguments.
 `--sc2` is the installation root containing `Versions/` and `SC2Data/`.

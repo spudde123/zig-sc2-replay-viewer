@@ -47,8 +47,8 @@ jobs:
 
       - name: Build and test
         run: |
-          zig build -Doptimize=ReleaseSafe -Dcpu=baseline
-          zig build test -Doptimize=ReleaseSafe -Dcpu=baseline --summary all
+          zig build -Doptimize=safe -Dcpu=baseline
+          zig build test -Doptimize=safe -Dcpu=baseline --summary all
           ./zig-out/bin/zig_sc2_replay_watcher --help
 
       - name: Package binary
