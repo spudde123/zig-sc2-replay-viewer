@@ -296,7 +296,7 @@ pub fn initialCamera(obs: sc2.sc2p.ResponseObservation, width: f32, height: f32)
     return .{ .x = width / 2, .y = height / 2 };
 }
 
-test "replacing image frames does not replace queued chat" {
+test "replacing frames retains chat and owns frame-aligned scene and losses" {
     var worker: Worker = .{ .io = std.testing.io, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" } };
     defer worker.deinit();
     const losses = @import("losses.zig");

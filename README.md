@@ -1,8 +1,8 @@
 # zig-sc2-replay-watcher
 
 A Linux SC2 replay viewer built with Zig 0.17. SC2 renders the game and minimap;
-the viewer adds playback controls, chat, player resources, production, unit and
-structure counts, and selected-unit details.
+the viewer adds playback controls, chat, resources and losses, production,
+unit/structure counts, and selected-unit details.
 
 ## Requirements
 
@@ -120,31 +120,16 @@ the titles. Selecting a tab opens the panel; **P** or **Hide / Show** collapses 
   `Marine: R:55 B:2`. **R** means ready; **B** means in progress. Ready counts
   are green, building counts amber, and zeros muted gray. Reported passengers
   inside bunkers and transports are included without double-counting.
+- **Losses:** recorded cumulative resource losses under **Army**, **Econ** and
+  **Tech**, followed by per-type death counts for the **last 15 game seconds**.
+  Econ is SC2's economy category, not workers only. The recent list is independent
+  of camera visibility and includes structures, unfinished construction and
+  temporary units.
+  The game's resource counters are shown as recorded, including negative values.
 
-Lists grow toward the minimap, share space between players, and show overflow
-counts when space runs out. Counts reflect reported units, not hidden units
-inferred from earlier observations (except the recorded losses described below).
-
-**Losses (4L):** each player's cumulative mineral/gas losses in SC2's **Army**,
-**Economy** and **Technology** categories, followed by a per-type list of units
-that died in the **last 15 game seconds**. There are no whole-game death or
-worker-count totals. Economy is the game's category, not a workers-only total.
-
-Resource losses are recorded in player-stat samples, normally every 160 loops
-(about **7.14 game seconds**). Values use the latest sample at or before the
-displayed frame, so they update less frequently than the recent unit list.
-Minerals (`M`) and vespene (`V`) stay separate (e.g. `Army: M:950 V:350`);
-no unit-cost estimation is used. In both Losses and Resources, `M:X` is mineral
-blue and `V:Y` is vespene green; other labels remain neutral.
-Signed counters, including occasional negative values, are preserved as recorded.
-
-The recent list comes directly from tracker death events, not disappearing units
-or camera visibility. Its window is 336 loops, freezes while paused, and excludes
-future events even though the replay is parsed at startup. It includes structures,
-unfinished construction and temporary units; type changes remain separate names.
-Missing resource fields show **unavailable**, and values before a player's first
-sample show **pending**, never fabricated zeroes. Unsupported/missing tracker
-data shows **Replay losses unavailable**.
+Lists share space between players and show overflow counts when space runs out.
+Unit/structure inventories count reported units, not inferred hidden units.
+The recent-death window freezes while paused.
 
 ### Player resources
 
@@ -155,15 +140,14 @@ M:125 V:50
 W:60 S:84 / 92
 ```
 
-These are **recorded replay samples**, normally every 160 loops—about
-**7.14 seconds at Faster speed**. The viewer uses the latest sample at or before
-the displayed frame, without interpolation, so values may lag gameplay by
-roughly seven seconds. Workers are the regular-worker count; total used supply
-includes supply reserved for production. Fractional supply is preserved, and
-the supply cap is limited to 200.
+In both Resources and Losses, `M:X` is mineral blue and `V:Y` vespene green.
+Workers exclude temporary MULEs; used supply includes production reservations
+and preserves fractional values.
 
-Values are pending before the first sample. Unsupported or missing tracker data,
-or an unavailable `libbz2` runtime, shows **Unavailable** without stopping playback.
+Resource values and cumulative losses use **recorded samples**, normally every
+**7.14 game seconds**, so they can lag behind the displayed action. Recent death
+counts use exact event timestamps instead. Values are pending before the first
+sample; missing statistics show **Unavailable** without stopping playback.
 
 ### Chat
 
@@ -171,10 +155,8 @@ Chat starts hidden and **opens automatically when a new message arrives**.
 After hiding it, existing history alone does not reopen it. **C** or the
 **Hide chat / Show chat** button toggles visibility without clearing history.
 
-Messages show gray timestamps, blue sender names and white text, with spacing
-between messages. Long messages wrap and may be shortened with `...`. Only
-recent history is shown; there is no scrollback yet. Unsupported Unicode is
-replaced with `?`.
+Messages include timestamps and sender names. Long messages wrap or are shortened
+with `...`; there is no scrollback. Unsupported Unicode is replaced with `?`.
 
 ### Selected units
 

@@ -24,8 +24,9 @@ test "resource spans include labels and signed values but exclude neutral text" 
     try std.testing.expectEqualStrings("V:-350", value[ranges[1].?.begin..ranges[1].?.end]);
     try std.testing.expectEqual(mineral_blue, ranges[0].?.color);
     try std.testing.expectEqual(vespene_green, ranges[1].?.color);
-    const clipped = spans("Technology: M:12 V:");
-    try std.testing.expectEqual(@as(usize, 19), clipped[1].?.end);
+    const clipped_text = "Tech: M:12 V:";
+    const clipped = spans(clipped_text);
+    try std.testing.expectEqualStrings("V:", clipped_text[clipped[1].?.begin..clipped[1].?.end]);
     try std.testing.expect(spans("M:12")[1] == null);
     try std.testing.expect(spans("Army: pending")[0] == null);
 }

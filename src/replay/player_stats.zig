@@ -464,26 +464,26 @@ const TestTracker = struct {
             try self.integer(value);
         }
     }
-    fn stats(self: *TestTracker, delta: u32, player: u32, lost: ?[6]i32) !void {
+    fn stats(self: *TestTracker, delta: u32, player: u32, lost: []const i32) !void {
         try self.raw(&.{ 3, 0 });
         try self.integer(delta);
         try self.integer(0);
         try self.raw(&.{ 5, 4, 0 }); // Two event fields; player ID first.
         try self.integer(player);
         try self.raw(&.{ 2, 5 }); // Stats field, nested structure.
-        try self.vint(if (lost != null) 11 else 5);
+        try self.vint(@intCast(5 + lost.len));
         for ([_]u32{ 0, 1, 4, 29, 30 }) |field| {
             try self.vint(field);
             try self.integer(0);
         }
-        if (lost) |values| for (values, 17..) |value, field| {
+        for (lost, 17..) |value, field| {
             try self.vint(@intCast(field));
             try self.raw(&.{9});
             try self.vint(value);
-        };
+        }
     }
     fn fixture(self: *TestTracker) !void {
-        try self.stats(0, 3, .{ 100, 200, 300, 400, 500, 600 });
+        try self.stats(0, 3, &.{ 100, 200, 300, 400, 500, 600 });
         try self.event(1, 0, 10, 1, "Marine", 3);
         try self.event(4, 1, 10, 1, "MarineBurrowed", null);
         try self.event(3, 1, 10, 1, null, 7);
@@ -504,9 +504,9 @@ const TestTracker = struct {
 test "recorded resource losses decode categories and select preceding sample per player" {
     var fixture: TestTracker = .{ .allocator = std.testing.allocator };
     defer fixture.bytes.deinit(fixture.allocator);
-    try fixture.stats(1, 3, .{ 100, 200, 300, 400, 500, 600 });
-    try fixture.stats(9, 7, .{ 1, 2, 3, 4, 5, 6 });
-    try fixture.stats(150, 3, .{ 110, 220, 330, 440, 550, 660 });
+    try fixture.stats(1, 3, &.{ 100, 200, 300, 400, 500, 600 });
+    try fixture.stats(9, 7, &.{ 1, 2, 3, 4, 5, 6 });
+    try fixture.stats(150, 3, &.{ 110, 220, 330, 440, 550, 660 });
     const timeline = try decode(std.testing.allocator, fixture.bytes.items);
     defer timeline.deinit(std.testing.allocator);
     var players: data.Players = .{};
@@ -525,7 +525,7 @@ test "recorded resource losses decode categories and select preceding sample per
 test "signed game-recorded resource adjustments are preserved" {
     var fixture: TestTracker = .{ .allocator = std.testing.allocator };
     defer fixture.bytes.deinit(fixture.allocator);
-    try fixture.stats(0, 3, .{ -50, 0, -25, 0, -100, 0 });
+    try fixture.stats(0, 3, &.{ -50, 0, -25, 0, -100, 0 });
     const timeline = try decode(std.testing.allocator, fixture.bytes.items);
     defer timeline.deinit(std.testing.allocator);
     const recorded = timeline.samples[0].values.resource_losses.?;
@@ -542,12 +542,15 @@ test "signed game-recorded resource adjustments are preserved" {
 test "missing resource loss fields do not become fabricated zero values" {
     var fixture: TestTracker = .{ .allocator = std.testing.allocator };
     defer fixture.bytes.deinit(fixture.allocator);
-    try fixture.stats(0, 3, null);
-    const timeline = try decode(std.testing.allocator, fixture.bytes.items);
-    defer timeline.deinit(std.testing.allocator);
-    try std.testing.expect(timeline.samples[0].values.resource_losses == null);
-    try std.testing.expect(!allLossFieldsPresent(.{ 0, 0, 0, 0, 0, null }));
-    try std.testing.expect(allLossFieldsPresent(.{ 0, 0, 0, 0, 0, 0 }));
+    const zeros = [_]i32{ 0, 0, 0, 0, 0, 0 };
+    // No fields, incomplete fields, and a complete recorded zero sample.
+    for ([_]usize{ 0, 5, 6 }) |count| {
+        fixture.bytes.clearRetainingCapacity();
+        try fixture.stats(0, 3, zeros[0..count]);
+        const timeline = try decode(std.testing.allocator, fixture.bytes.items);
+        defer timeline.deinit(std.testing.allocator);
+        try std.testing.expectEqual(count == 6, timeline.samples[0].values.resource_losses != null);
+    }
 }
 
 test "tracker lifecycle resolves type and owner at death, recycled identities and neutral units" {

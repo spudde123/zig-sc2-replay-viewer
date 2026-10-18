@@ -137,14 +137,15 @@ test "loss view distinguishes unavailable and missing category data from zero" {
     try std.testing.expectEqualStrings("Losses: more panel space needed", std.mem.sliceTo(&small.rows[0].text, 0));
 }
 
-test "recent list overflow counts deaths and preserves resource rows for both players" {
+test "recent list overflow shares rows between players and counts omitted deaths" {
     var players: data.Players = .{};
     players.add(3, "Alice");
     players.add(7, "Bob");
     var groups: [4]losses.Group = undefined;
     for (&groups, 0..) |*group, i| {
         group.* = .{ .owner = if (i < 2) 3 else 7, .name = @splat(0), .recent = i + 1 };
-        @memcpy(group.name[0..6], "Marine");
+        const name: []const u8 = if (i % 2 == 0) "Marine" else "Marauder";
+        @memcpy(group.name[0..name.len], name);
     }
     const result = build(&.{ .available = true, .groups = &groups }, &.{}, &players, 12, 40);
     try std.testing.expectEqual(@as(usize, 12), result.count);
