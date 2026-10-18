@@ -210,6 +210,12 @@ const Reader = struct {
         if (value < 0 or value > std.math.maxInt(u32)) return error.InvalidTrackerEncoding;
         return @intCast(value);
     }
+    fn signedInteger(self: *Reader) !i32 {
+        try self.expect(9);
+        const value = try self.vint();
+        if (value < std.math.minInt(i32) or value > std.math.maxInt(i32)) return error.InvalidTrackerEncoding;
+        return @intCast(value);
+    }
     fn name(self: *Reader) !losses.Name {
         try self.expect(2);
         const n = try self.count();
@@ -295,6 +301,7 @@ fn checkBuild(bytes: []const u8) !void {
 fn readSample(reader: *Reader, loop: u32) !Sample {
     var player: ?u32 = null;
     var values: [5]?u32 = @splat(null);
+    var lost: [6]?i32 = @splat(null);
     const fields = try reader.structure();
     for (0..fields) |_| {
         switch (try reader.vint()) {
@@ -306,6 +313,9 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
                         0 => values[0] = try reader.integer(),
                         1 => values[1] = try reader.integer(),
                         4 => values[4] = try reader.integer(),
+                        // Build 75689: minerals lost Army/Economy/Technology,
+                        // then vespene lost in the same category order.
+                        17...22 => |field| lost[@intCast(field - 17)] = try reader.signedInteger(),
                         29 => values[2] = try reader.integer(),
                         30 => values[3] = try reader.integer(),
                         else => try reader.skip(0),
@@ -326,7 +336,17 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
         .food_used = used,
         .food_cap = @min(200, @as(f32, @floatFromInt(values[3] orelse return error.MissingPlayerStats)) / 4096),
         .worker_supply = workers,
+        .resource_losses = if (allLossFieldsPresent(lost)) .{
+            .army = .{ .minerals = lost[0].?, .vespene = lost[3].? },
+            .economy = .{ .minerals = lost[1].?, .vespene = lost[4].? },
+            .technology = .{ .minerals = lost[2].?, .vespene = lost[5].? },
+        } else null,
     } };
+}
+
+fn allLossFieldsPresent(fields: [6]?i32) bool {
+    for (fields) |value| if (value == null) return false;
+    return true;
 }
 
 const TrackedUnit = struct { owner: u32, name: losses.Name };
@@ -411,8 +431,8 @@ const TestTracker = struct {
     fn raw(self: *TestTracker, bytes: []const u8) !void {
         try self.bytes.appendSlice(self.allocator, bytes);
     }
-    fn vint(self: *TestTracker, value: u32) !void {
-        var rest: u64 = @as(u64, value) << 1;
+    fn vint(self: *TestTracker, value: i64) !void {
+        var rest: u64 = (@as(u64, @intCast(if (value < 0) -value else value)) << 1) | @intFromBool(value < 0);
         while (rest >= 128) {
             try self.bytes.append(self.allocator, @as(u8, @intCast(rest & 127)) | 128);
             rest >>= 7;
@@ -444,9 +464,26 @@ const TestTracker = struct {
             try self.integer(value);
         }
     }
+    fn stats(self: *TestTracker, delta: u32, player: u32, lost: ?[6]i32) !void {
+        try self.raw(&.{ 3, 0 });
+        try self.integer(delta);
+        try self.integer(0);
+        try self.raw(&.{ 5, 4, 0 }); // Two event fields; player ID first.
+        try self.integer(player);
+        try self.raw(&.{ 2, 5 }); // Stats field, nested structure.
+        try self.vint(if (lost != null) 11 else 5);
+        for ([_]u32{ 0, 1, 4, 29, 30 }) |field| {
+            try self.vint(field);
+            try self.integer(0);
+        }
+        if (lost) |values| for (values, 17..) |value, field| {
+            try self.vint(@intCast(field));
+            try self.raw(&.{9});
+            try self.vint(value);
+        };
+    }
     fn fixture(self: *TestTracker) !void {
-        // Stats event at loop zero: player 3, five required fields all zero.
-        try self.raw(&.{ 3, 0, 9, 0, 9, 0, 5, 4, 0, 9, 6, 2, 5, 10, 0, 9, 0, 2, 9, 0, 8, 9, 0, 58, 9, 0, 60, 9, 0 });
+        try self.stats(0, 3, .{ 100, 200, 300, 400, 500, 600 });
         try self.event(1, 0, 10, 1, "Marine", 3);
         try self.event(4, 1, 10, 1, "MarineBurrowed", null);
         try self.event(3, 1, 10, 1, null, 7);
@@ -463,6 +500,55 @@ const TestTracker = struct {
         try self.raw(&.{ 3, 0, 9, 0, 9, 14, 5, 0 });
     }
 };
+
+test "recorded resource losses decode categories and select preceding sample per player" {
+    var fixture: TestTracker = .{ .allocator = std.testing.allocator };
+    defer fixture.bytes.deinit(fixture.allocator);
+    try fixture.stats(1, 3, .{ 100, 200, 300, 400, 500, 600 });
+    try fixture.stats(9, 7, .{ 1, 2, 3, 4, 5, 6 });
+    try fixture.stats(150, 3, .{ 110, 220, 330, 440, 550, 660 });
+    const timeline = try decode(std.testing.allocator, fixture.bytes.items);
+    defer timeline.deinit(std.testing.allocator);
+    var players: data.Players = .{};
+    players.add(7, "Bob");
+    players.add(3, "Alice");
+    try std.testing.expect(timeline.at(0, &players).forPlayer(3) == null);
+    const before = timeline.at(159, &players).forPlayer(3).?.resource_losses.?;
+    try std.testing.expectEqualDeep(data.ResourceLoss{ .minerals = 100, .vespene = 400 }, before.army);
+    try std.testing.expectEqualDeep(data.ResourceLoss{ .minerals = 200, .vespene = 500 }, before.economy);
+    try std.testing.expectEqualDeep(data.ResourceLoss{ .minerals = 300, .vespene = 600 }, before.technology);
+    const now = timeline.at(160, &players);
+    try std.testing.expectEqual(@as(i32, 110), now.forPlayer(3).?.resource_losses.?.army.minerals);
+    try std.testing.expectEqual(@as(i32, 1), now.forPlayer(7).?.resource_losses.?.army.minerals);
+}
+
+test "signed game-recorded resource adjustments are preserved" {
+    var fixture: TestTracker = .{ .allocator = std.testing.allocator };
+    defer fixture.bytes.deinit(fixture.allocator);
+    try fixture.stats(0, 3, .{ -50, 0, -25, 0, -100, 0 });
+    const timeline = try decode(std.testing.allocator, fixture.bytes.items);
+    defer timeline.deinit(std.testing.allocator);
+    const recorded = timeline.samples[0].values.resource_losses.?;
+    try std.testing.expectEqual(@as(i32, -50), recorded.army.minerals);
+    try std.testing.expectEqual(@as(i32, -100), recorded.economy.vespene);
+    try std.testing.expectEqual(@as(i32, -25), recorded.technology.minerals);
+    fixture.bytes.clearRetainingCapacity();
+    try fixture.raw(&.{9});
+    try fixture.vint(@as(i64, std.math.maxInt(i32)) + 1);
+    var reader: Reader = .{ .bytes = fixture.bytes.items };
+    try std.testing.expectError(error.InvalidTrackerEncoding, reader.signedInteger());
+}
+
+test "missing resource loss fields do not become fabricated zero values" {
+    var fixture: TestTracker = .{ .allocator = std.testing.allocator };
+    defer fixture.bytes.deinit(fixture.allocator);
+    try fixture.stats(0, 3, null);
+    const timeline = try decode(std.testing.allocator, fixture.bytes.items);
+    defer timeline.deinit(std.testing.allocator);
+    try std.testing.expect(timeline.samples[0].values.resource_losses == null);
+    try std.testing.expect(!allLossFieldsPresent(.{ 0, 0, 0, 0, 0, null }));
+    try std.testing.expect(allLossFieldsPresent(.{ 0, 0, 0, 0, 0, 0 }));
+}
 
 test "tracker lifecycle resolves type and owner at death, recycled identities and neutral units" {
     var fixture: TestTracker = .{ .allocator = std.testing.allocator };

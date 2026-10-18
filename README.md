@@ -125,26 +125,33 @@ Lists grow toward the minimap, share space between players, and show overflow
 counts when space runs out. Counts reflect reported units, not hidden units
 inferred from earlier observations (except the recorded losses described below).
 
-**Losses (4L):** each player's whole-game death count and last-15-second count,
-a separate **Workers lost (game)** total, and a per-type list for the recent window.
-Worker deaths count SCVs, Probes and Drones (including burrowed Drones), not MULEs.
-They remain included in the overall death total. Counts come directly from
-replay tracker death events, not disappearing units or camera visibility.
-The window follows game time (336 loops), freezes while paused, and excludes
-future events even though the replay is parsed at startup. Counts include
-structures, unfinished construction and temporary units; they are not yet an
-army-only or combat-only statistic. Type changes remain separate names.
-Supply/resource valuation and army classification are deliberately deferred;
-the game-data catalog can supply metadata for that later step.
-Missing/unsupported tracker data shows **Replay losses unavailable**, not zero.
+**Losses (4L):** each player's cumulative mineral/gas losses in SC2's **Army**,
+**Economy** and **Technology** categories, followed by a per-type list of units
+that died in the **last 15 game seconds**. There are no whole-game death or
+worker-count totals. Economy is the game's category, not a workers-only total.
+
+Resource losses are recorded in player-stat samples, normally every 160 loops
+(about **7.14 game seconds**). Values use the latest sample at or before the
+displayed frame, so they update less frequently than the recent unit list.
+Minerals (`M`) and vespene (`V`) stay separate (e.g. `Army: M:950 V:350`);
+no unit-cost estimation is used.
+Signed counters, including occasional negative values, are preserved as recorded.
+
+The recent list comes directly from tracker death events, not disappearing units
+or camera visibility. Its window is 336 loops, freezes while paused, and excludes
+future events even though the replay is parsed at startup. It includes structures,
+unfinished construction and temporary units; type changes remain separate names.
+Missing resource fields show **unavailable**, and values before a player's first
+sample show **pending**, never fabricated zeroes. Unsupported/missing tracker
+data shows **Replay losses unavailable**.
 
 ### Player resources
 
 The top-right panel shows each player's minerals, vespene, workers and supply:
 
 ```text
-M: 125  V: 50
-W: 60 S: 84 / 92
+M:125 V:50
+W:60 S:84 / 92
 ```
 
 These are **recorded replay samples**, normally every 160 loops—about

@@ -163,7 +163,8 @@ pub const Renderer = struct {
                     production_layout = production.build(&summary, overlay.players, rows, production_columns, label_columns);
                 } else if (overlay.production_tab == .losses) {
                     const snapshot = if (frame) |f| f.losses else @import("../replay/losses.zig").Snapshot{};
-                    production_layout = @import("losses_view.zig").build(&snapshot, overlay.players, rows, production_columns);
+                    const stats = if (frame) |f| f.player_stats else data.PlayerStats{};
+                    production_layout = @import("losses_view.zig").build(&snapshot, &stats, overlay.players, rows, production_columns);
                 } else {
                     const summary = if (frame) |f| inventory.summarize(&f.scene, overlay.production_tab == .structures) else inventory.Summary{};
                     production_layout = inventory.build(&summary, overlay.players, rows, production_columns);

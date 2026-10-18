@@ -332,7 +332,6 @@ test "replacing image frames does not replace queued chat" {
     defer frame.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(u32, 2), frame.game_loop);
     try std.testing.expect(frame.losses.available);
-    try std.testing.expectEqual(@as(usize, 2), frame.losses.groups[0].total);
     try std.testing.expectEqual(@as(usize, 2), frame.losses.groups[0].recent);
     @memset(&deaths[0].name, 0); // Frame owns its summary independently of the timeline.
     try std.testing.expectEqualStrings("Marine", std.mem.sliceTo(&frame.losses.groups[0].name, 0));
