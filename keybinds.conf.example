@@ -16,6 +16,7 @@ toggle_production = P
 tab_production = 1
 tab_units = 2
 tab_structures = 3
+tab_losses = 4
 pan_up = W
 pan_left = A
 pan_down = S

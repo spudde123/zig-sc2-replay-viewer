@@ -19,6 +19,7 @@ pub const Action = enum {
     tab_production,
     tab_units,
     tab_structures,
+    tab_losses,
 
     pub fn isPan(self: Action) bool {
         return switch (self) {
@@ -64,6 +65,7 @@ pub const Keybinds = struct {
         binding(&.{._1}),
         binding(&.{._2}),
         binding(&.{._3}),
+        binding(&.{._4}),
     },
 
     pub fn keys(self: *const Keybinds, action: Action) []const Keycode {
@@ -212,6 +214,8 @@ test "production toggle defaults to P, supports aliases and disabling, and ignor
     try std.testing.expectEqual(Action.tab_production, defaults.actionFor(._1).?);
     try std.testing.expectEqual(Action.tab_units, defaults.actionFor(._2).?);
     try std.testing.expectEqual(Action.tab_structures, defaults.actionFor(._3).?);
+    try std.testing.expectEqual(Action.tab_losses, defaults.actionFor(._4).?);
+    try std.testing.expect(!Action.tab_losses.acceptsRepeat());
     try std.testing.expect(!Action.tab_units.acceptsRepeat());
     try std.testing.expect(!Action.toggle_production.acceptsRepeat());
     const custom = try parse("toggle_production = F4, TAB\n");

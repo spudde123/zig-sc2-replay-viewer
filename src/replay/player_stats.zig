@@ -1,17 +1,21 @@
-//! Narrow build-75689 replay reader: MPQ v3 single-unit tracker file and
+//! Economy samples and timestamped unit deaths from the build-75689 tracker.
+//! Narrow replay reader: MPQ v3 single-unit tracker file and
 //! Blizzard's versioned tracker encoding. Not a general-purpose replay parser.
 //! Format/algorithm references: mpyq (BSD-2-Clause), s2protocol (MIT).
 //! Notices are in licenses/mpyq.txt and licenses/s2protocol.txt.
 const std = @import("std");
 const data = @import("replay_data.zig");
+const losses = @import("losses.zig");
 const max_file = 64 * 1024 * 1024;
 const max_tracker = 16 * 1024 * 1024;
 
 pub const Sample = struct { player_id: u8, values: data.PlayerEconomy };
 pub const Timeline = struct {
     samples: []Sample,
+    deaths: []losses.Death = &.{},
     pub fn deinit(self: Timeline, allocator: std.mem.Allocator) void {
         allocator.free(self.samples);
+        allocator.free(self.deaths);
     }
     pub fn at(self: Timeline, loop: u32, players: *const data.Players) data.PlayerStats {
         var result: data.PlayerStats = .{ .available = true };
@@ -206,6 +210,19 @@ const Reader = struct {
         if (value < 0 or value > std.math.maxInt(u32)) return error.InvalidTrackerEncoding;
         return @intCast(value);
     }
+    fn name(self: *Reader) !losses.Name {
+        try self.expect(2);
+        const n = try self.count();
+        const bytes = try self.take(n);
+        var result: losses.Name = @splat(0);
+        const length = @min(bytes.len, result.len);
+        @memcpy(result[0..length], bytes[0..length]);
+        for (result[0..length]) |*ch| if (ch.* < 32 or ch.* > 126) {
+            ch.* = '?';
+        };
+        if (n > result.len) @memcpy(result[result.len - 3 ..], "...");
+        return result;
+    }
     fn structure(self: *Reader) !usize {
         try self.expect(5);
         return self.count();
@@ -312,10 +329,61 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
     } };
 }
 
+const TrackedUnit = struct { owner: u32, name: losses.Name };
+
+// The identity includes the recycle counter: a reused index is a different unit.
+fn readUnitEvent(reader: *Reader, allocator: std.mem.Allocator, units: *std.AutoHashMapUnmanaged(u64, TrackedUnit), deaths: *std.ArrayList(losses.Death), event: u32, loop: u32) !void {
+    var index: ?u32 = null;
+    var recycle: ?u32 = null;
+    var owner: ?u32 = null;
+    var name: ?losses.Name = null;
+    const fields = try reader.structure();
+    for (0..fields) |_| {
+        const field = try reader.vint();
+        if (field == 0) {
+            index = try reader.integer();
+        } else if (field == 1) {
+            recycle = try reader.integer();
+        } else if (field == 2 and (event == 1 or event == 4 or event == 6)) {
+            name = try reader.name();
+        } else if ((field == 4 and (event == 1 or event == 6)) or (field == 3 and event == 3)) {
+            // Upkeep owner, not the controller (shared control can differ).
+            owner = try reader.integer();
+        } else try reader.skip(0);
+    }
+    const key = (@as(u64, index orelse return error.MissingUnitIdentity) << 32) |
+        (recycle orelse return error.MissingUnitIdentity);
+    switch (event) {
+        1, 6 => try units.put(allocator, key, .{
+            .owner = owner orelse return error.MissingUnitOwner,
+            .name = name orelse return error.MissingUnitType,
+        }),
+        2 => {
+            const unit = units.fetchRemove(key) orelse return error.UnknownTrackerUnit;
+            if (unit.value.owner > 0 and unit.value.owner < 16) {
+                try deaths.append(allocator, .{ .game_loop = loop, .owner = unit.value.owner, .name = unit.value.name });
+            }
+        },
+        3 => {
+            const unit = units.getPtr(key) orelse return error.UnknownTrackerUnit;
+            unit.owner = owner orelse return error.MissingUnitOwner;
+        },
+        4 => {
+            const unit = units.getPtr(key) orelse return error.UnknownTrackerUnit;
+            unit.name = name orelse return error.MissingUnitType;
+        },
+        else => unreachable,
+    }
+}
+
 fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Timeline {
     var reader: Reader = .{ .bytes = bytes };
     var samples: std.ArrayList(Sample) = .empty;
     defer samples.deinit(allocator);
+    var deaths: std.ArrayList(losses.Death) = .empty;
+    defer deaths.deinit(allocator);
+    var units: std.AutoHashMapUnmanaged(u64, TrackedUnit) = .empty;
+    defer units.deinit(allocator);
     var loop: u32 = 0;
     while (reader.pos < bytes.len) {
         try reader.expect(3); // SVarUint32 tagged choice
@@ -326,10 +394,114 @@ fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Timeline {
         if (event == 0) {
             const sample = try readSample(&reader, loop);
             try samples.append(allocator, sample);
+        } else if (event == 1 or event == 2 or event == 3 or event == 4 or event == 6) {
+            try readUnitEvent(&reader, allocator, &units, &deaths, event, loop);
         } else try reader.skip(0);
     }
     if (samples.items.len == 0) return error.MissingPlayerStats;
-    return .{ .samples = try samples.toOwnedSlice(allocator) };
+    const owned_samples = try samples.toOwnedSlice(allocator);
+    errdefer allocator.free(owned_samples);
+    return .{ .samples = owned_samples, .deaths = try deaths.toOwnedSlice(allocator) };
+}
+
+// Small versioned-encoding fixtures, independent of an SC2 installation/replay.
+const TestTracker = struct {
+    bytes: std.ArrayList(u8) = .empty,
+    allocator: std.mem.Allocator,
+    fn raw(self: *TestTracker, bytes: []const u8) !void {
+        try self.bytes.appendSlice(self.allocator, bytes);
+    }
+    fn vint(self: *TestTracker, value: u32) !void {
+        var rest: u64 = @as(u64, value) << 1;
+        while (rest >= 128) {
+            try self.bytes.append(self.allocator, @as(u8, @intCast(rest & 127)) | 128);
+            rest >>= 7;
+        }
+        try self.bytes.append(self.allocator, @intCast(rest));
+    }
+    fn integer(self: *TestTracker, value: u32) !void {
+        try self.raw(&.{9});
+        try self.vint(value);
+    }
+    fn event(self: *TestTracker, id: u32, delta: u32, index: u32, recycle: u32, name: ?[]const u8, owner: ?u32) !void {
+        try self.raw(&.{ 3, 0 }); // loop delta choice
+        try self.integer(delta);
+        try self.integer(id);
+        try self.raw(&.{5});
+        try self.vint(2 + @as(u32, @intFromBool(name != null)) + @as(u32, @intFromBool(owner != null)));
+        try self.vint(0);
+        try self.integer(index);
+        try self.vint(1);
+        try self.integer(recycle);
+        if (name) |value| {
+            try self.vint(2);
+            try self.raw(&.{2});
+            try self.vint(@intCast(value.len));
+            try self.raw(value);
+        }
+        if (owner) |value| {
+            try self.vint(if (id == 3) 3 else 4);
+            try self.integer(value);
+        }
+    }
+    fn fixture(self: *TestTracker) !void {
+        // Stats event at loop zero: player 3, five required fields all zero.
+        try self.raw(&.{ 3, 0, 9, 0, 9, 0, 5, 4, 0, 9, 6, 2, 5, 10, 0, 9, 0, 2, 9, 0, 8, 9, 0, 58, 9, 0, 60, 9, 0 });
+        try self.event(1, 0, 10, 1, "Marine", 3);
+        try self.event(4, 1, 10, 1, "MarineBurrowed", null);
+        try self.event(3, 1, 10, 1, null, 7);
+        try self.event(2, 1, 10, 1, null, null);
+        // Construction-start and born events, with a reused index, are distinct.
+        try self.event(6, 0, 10, 2, "Barracks", 3);
+        try self.event(1, 0, 10, 3, "SCV", 3);
+        try self.event(2, 1, 10, 2, null, null);
+        try self.event(2, 0, 10, 3, null, null);
+        // Neutral deaths are not player losses.
+        try self.event(1, 0, 20, 1, "MineralField", 0);
+        try self.event(2, 0, 20, 1, null, null);
+        // Unhandled well-formed event is still skipped.
+        try self.raw(&.{ 3, 0, 9, 0, 9, 14, 5, 0 });
+    }
+};
+
+test "tracker lifecycle resolves type and owner at death, recycled identities and neutral units" {
+    var fixture: TestTracker = .{ .allocator = std.testing.allocator };
+    defer fixture.bytes.deinit(fixture.allocator);
+    try fixture.fixture();
+    const timeline = try decode(std.testing.allocator, fixture.bytes.items);
+    defer timeline.deinit(std.testing.allocator);
+    @memset(fixture.bytes.items, 0); // No borrowed names survive decoding.
+    try std.testing.expectEqual(@as(usize, 3), timeline.deaths.len);
+    try std.testing.expectEqual(@as(u32, 3), timeline.deaths[0].game_loop);
+    try std.testing.expectEqual(@as(u32, 7), timeline.deaths[0].owner);
+    try std.testing.expectEqualStrings("MarineBurrowed", std.mem.sliceTo(&timeline.deaths[0].name, 0));
+    try std.testing.expectEqualStrings("Barracks", std.mem.sliceTo(&timeline.deaths[1].name, 0));
+    try std.testing.expectEqualStrings("SCV", std.mem.sliceTo(&timeline.deaths[2].name, 0));
+    try std.testing.expectEqual(@as(u32, 3), timeline.deaths[2].owner);
+}
+
+test "tracker decode cleans every allocation failure" {
+    var fixture: TestTracker = .{ .allocator = std.testing.allocator };
+    defer fixture.bytes.deinit(fixture.allocator);
+    try fixture.fixture();
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, struct {
+        fn run(allocator: std.mem.Allocator, bytes: []const u8) !void {
+            const timeline = try decode(allocator, bytes);
+            defer timeline.deinit(allocator);
+        }
+    }.run, .{fixture.bytes.items});
+}
+
+test "unresolved or malformed lifecycle records fail rather than fabricate zero losses" {
+    var fixture: TestTracker = .{ .allocator = std.testing.allocator };
+    defer fixture.bytes.deinit(fixture.allocator);
+    try fixture.event(2, 0, 10, 1, null, null);
+    try std.testing.expectError(error.UnknownTrackerUnit, decode(std.testing.allocator, fixture.bytes.items));
+    fixture.bytes.clearRetainingCapacity();
+    try fixture.event(1, 0, 10, 1, null, 3);
+    try std.testing.expectError(error.MissingUnitType, decode(std.testing.allocator, fixture.bytes.items));
+    // Missing tag recycle field.
+    try std.testing.expectError(error.MissingUnitIdentity, decode(std.testing.allocator, &.{ 3, 0, 9, 0, 9, 4, 5, 2, 0, 9, 20 }));
 }
 
 test "tagged decoder rejects excessive lengths, nesting, varints and loop overflow" {

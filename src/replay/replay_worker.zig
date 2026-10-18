@@ -127,8 +127,8 @@ pub const Worker = struct {
         self.stats_timeline = @import("player_stats.zig").load(self.allocator, self.io, self.config.replay) catch |err| blk: {
             if (err == error.Canceled) return error.Canceled;
             if (err == error.Bzip2LibraryUnavailable) {
-                std.log.warn("Player statistics unavailable: install the libbz2 runtime library (bzip2-libs / libbz2-1.0). Playback continues.", .{});
-            } else std.log.warn("Player statistics unavailable: {s}; playback continues.", .{@errorName(err)});
+                std.log.warn("Player statistics and losses unavailable: install the libbz2 runtime library (bzip2-libs / libbz2-1.0). Playback continues.", .{});
+            } else std.log.warn("Player statistics and losses unavailable: {s}; playback continues.", .{@errorName(err)});
             break :blk null;
         };
         defer {
@@ -241,7 +241,11 @@ pub const Worker = struct {
             .terrain = if (self.terrain) |*terrain| terrain else null,
             .production_catalog = if (self.production_catalog) |*catalog| catalog else null,
         });
-        if (self.stats_timeline) |timeline| frame.player_stats = timeline.at(frame.game_loop, &self.players);
+        errdefer frame.deinit(self.allocator);
+        if (self.stats_timeline) |timeline| {
+            frame.player_stats = timeline.at(frame.game_loop, &self.players);
+            frame.losses = try @import("losses.zig").snapshot(self.allocator, timeline.deaths, frame.game_loop);
+        }
         self.lock();
         const old = self.pending;
         appendChat(&self.pending_chat, obs);
@@ -295,6 +299,15 @@ pub fn initialCamera(obs: sc2.sc2p.ResponseObservation, width: f32, height: f32)
 test "replacing image frames does not replace queued chat" {
     var worker: Worker = .{ .io = std.testing.io, .allocator = std.testing.allocator, .config = .{ .installation = "", .replay = "" } };
     defer worker.deinit();
+    const losses = @import("losses.zig");
+    var death_name: losses.Name = @splat(0);
+    @memcpy(death_name[0..6], "Marine");
+    var deaths = [_]losses.Death{
+        .{ .game_loop = 1, .owner = 1, .name = death_name },
+        .{ .game_loop = 2, .owner = 1, .name = death_name },
+        .{ .game_loop = 3, .owner = 1, .name = death_name },
+    };
+    worker.stats_timeline = .{ .samples = &.{}, .deaths = &deaths };
     var history: data.ChatQueue = .{};
     var heights: [4]u8 = @splat(223);
     worker.terrain = .{ .width = 2, .height = 2, .bytes = &heights };
@@ -318,6 +331,11 @@ test "replacing image frames does not replace queued chat" {
     const frame = update.frame.?;
     defer frame.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(u32, 2), frame.game_loop);
+    try std.testing.expect(frame.losses.available);
+    try std.testing.expectEqual(@as(usize, 2), frame.losses.groups[0].total);
+    try std.testing.expectEqual(@as(usize, 2), frame.losses.groups[0].recent);
+    @memset(&deaths[0].name, 0); // Frame owns its summary independently of the timeline.
+    try std.testing.expectEqualStrings("Marine", std.mem.sliceTo(&frame.losses.groups[0].name, 0));
     try std.testing.expectEqual(@as(f32, 40), frame.scene.camera.?.distance);
     try std.testing.expectEqual(@as(f32, 0.9), frame.scene.find(1).?.position.x);
     try std.testing.expectEqual(@as(usize, 2), history.count);

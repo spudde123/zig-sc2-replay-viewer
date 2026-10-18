@@ -80,6 +80,7 @@ pub const Frame = struct {
     ended: bool,
     scene: @import("replay_data.zig").Scene = .{},
     player_stats: @import("replay_data.zig").PlayerStats = .{},
+    losses: @import("losses.zig").Snapshot = .{},
 
     pub fn fromObservation(allocator: std.mem.Allocator, response: protocol.ResponseObservation, status: protocol.Status) !Frame {
         return fromObservationWithContext(allocator, response, status, .{});
@@ -107,6 +108,7 @@ pub const Frame = struct {
         self.map.deinit(allocator);
         if (self.minimap) |m| m.deinit(allocator);
         self.scene.deinit(allocator);
+        self.losses.deinit(allocator);
     }
 };
 

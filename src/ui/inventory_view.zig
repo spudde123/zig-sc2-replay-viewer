@@ -2,7 +2,7 @@
 const std = @import("std");
 const data = @import("../replay/replay_data.zig");
 const production = @import("production_view.zig");
-pub const Tab = enum { production, units, structures };
+pub const Tab = enum { production, units, structures, losses };
 pub const Group = struct {
     owner: i32,
     product: data.Product,

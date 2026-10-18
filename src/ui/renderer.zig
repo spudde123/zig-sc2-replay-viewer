@@ -87,7 +87,7 @@ pub const Renderer = struct {
     stats_rect: Rect = .{},
     production_rect: Rect = .{},
     production_button_rect: Rect = .{},
-    production_tab_rects: [3]Rect = @splat(.{}),
+    production_tab_rects: [4]Rect = @splat(.{}),
     chat_rect: Rect = .{},
     order_box_rect: Rect = .{},
 
@@ -161,6 +161,9 @@ pub const Renderer = struct {
                 if (overlay.production_tab == .production) {
                     const summary = if (frame) |f| production.summarize(&f.scene) else production.Summary{};
                     production_layout = production.build(&summary, overlay.players, rows, production_columns, label_columns);
+                } else if (overlay.production_tab == .losses) {
+                    const snapshot = if (frame) |f| f.losses else @import("../replay/losses.zig").Snapshot{};
+                    production_layout = @import("losses_view.zig").build(&snapshot, overlay.players, rows, production_columns);
                 } else {
                     const summary = if (frame) |f| inventory.summarize(&f.scene, overlay.production_tab == .structures) else inventory.Summary{};
                     production_layout = inventory.build(&summary, overlay.players, rows, production_columns);
@@ -270,7 +273,7 @@ pub const Renderer = struct {
         if (rect.width == 0) return;
         text.font(1);
         text.canvas(width * 8 / 12, height * 8 / 12);
-        for ([_][:0]const u8{ "1P+R", "2U", "3S" }, self.production_tab_rects, 0..) |title, tab_rect, i| {
+        for ([_][:0]const u8{ "1P+R", "2U", "3S", "4L" }, self.production_tab_rects, 0..) |title, tab_rect, i| {
             if (@backingInt(tab) == i) solidRect(tab_rect, .{ 0.12, 0.22, 0.30 });
             text.origin((tab_rect.x + 4) / 12, (tab_rect.y + 4) / 12);
             text.home();

@@ -69,7 +69,7 @@ The default EGL path is Fedora's `/usr/lib64/libEGL.so.1`.
 | Space | Pause/resume |
 | Up / Down, or `]` / `[` | Faster/slower: 0.25x–16x |
 | Right Arrow | Advance one simulation loop while paused |
-| 1 / 2 / 3 | Production + research / units / structures tabs |
+| 1 / 2 / 3 / 4 | Production + research / units / structures / losses tabs |
 | P | Show/hide the selected tab's panel |
 | C | Show/hide chat |
 | Hold WASD | Pan the camera; diagonals supported |
@@ -107,9 +107,9 @@ warning. Changes take effect after restarting.
 
 ## Panels and unit details
 
-### Production, units and structures
+### Production, units, structures and losses
 
-The top-left panel has tabs **1P+R 2U 3S**, selectable by number keys or clicking
+The top-left panel has tabs **1P+R 2U 3S 4L**, selectable by number keys or clicking
 the titles. Selecting a tab opens the panel; **P** or **Hide / Show** collapses it.
 
 - **Production + research:** construction, active training, morphs and research,
@@ -123,7 +123,20 @@ the titles. Selecting a tab opens the panel; **P** or **Hide / Show** collapses 
 
 Lists grow toward the minimap, share space between players, and show overflow
 counts when space runs out. Counts reflect reported units, not hidden units
-inferred from earlier observations.
+inferred from earlier observations (except the recorded losses described below).
+
+**Losses (4L):** each player's whole-game death count and last-15-second count,
+a separate **Workers lost (game)** total, and a per-type list for the recent window.
+Worker deaths count SCVs, Probes and Drones (including burrowed Drones), not MULEs.
+They remain included in the overall death total. Counts come directly from
+replay tracker death events, not disappearing units or camera visibility.
+The window follows game time (336 loops), freezes while paused, and excludes
+future events even though the replay is parsed at startup. Counts include
+structures, unfinished construction and temporary units; they are not yet an
+army-only or combat-only statistic. Type changes remain separate names.
+Supply/resource valuation and army classification are deliberately deferred;
+the game-data catalog can supply metadata for that later step.
+Missing/unsupported tracker data shows **Replay losses unavailable**, not zero.
 
 ### Player resources
 

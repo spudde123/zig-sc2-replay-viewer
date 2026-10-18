@@ -22,6 +22,8 @@ test {
     _ = @import("ui/order_view.zig");
     _ = @import("replay/production_catalog.zig");
     _ = @import("replay/player_stats.zig");
+    _ = @import("replay/losses.zig");
+    _ = @import("ui/losses_view.zig");
     _ = @import("ui/player_stats_view.zig");
     _ = @import("ui/production_view.zig");
     _ = @import("ui/inventory_view.zig");

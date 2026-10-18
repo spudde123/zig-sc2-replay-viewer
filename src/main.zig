@@ -166,6 +166,7 @@ const App = struct {
                     .tab_production => .production,
                     .tab_units => .units,
                     .tab_structures => .structures,
+                    .tab_losses => .losses,
                     else => null,
                 };
                 if (tab) |selected| {
