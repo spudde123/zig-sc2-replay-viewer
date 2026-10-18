@@ -256,6 +256,7 @@ pub const Row = struct {
     unknown_bars: usize = 0,
     more: usize = 0,
     research: bool = false,
+    resource_values: bool = false,
     counts: ?struct { ready_begin: usize, building_begin: usize, ready: usize, building: usize } = null,
 };
 pub const Layout = struct {

@@ -22,6 +22,7 @@ fn resourceRow(layout: *production.Layout, label: []const u8, value: ?data.Resou
     else
         std.fmt.bufPrint(&buffer, "{s}: {s}", .{ label, status }) catch unreachable;
     add(layout, .product, text, columns);
+    layout.rows[layout.count - 1].resource_values = value != null;
 }
 
 pub fn build(snapshot: *const losses.Snapshot, stats: *const data.PlayerStats, players: *const data.Players, rows: usize, columns: usize) production.Layout {
@@ -50,8 +51,8 @@ pub fn build(snapshot: *const losses.Snapshot, stats: *const data.PlayerStats, p
         const resources = if (sample) |s| s.resource_losses else null;
         const status: []const u8 = if (!stats.available or sample != null) "unavailable" else "pending";
         resourceRow(&layout, "Army", if (resources) |r| r.army else null, status, columns);
-        resourceRow(&layout, "Economy", if (resources) |r| r.economy else null, status, columns);
-        resourceRow(&layout, "Technology", if (resources) |r| r.technology else null, status, columns);
+        resourceRow(&layout, "Econ", if (resources) |r| r.economy else null, status, columns);
+        resourceRow(&layout, "Tech", if (resources) |r| r.technology else null, status, columns);
         add(&layout, .heading, "Deaths last 15s:", columns);
         if (!snapshot.available or types == 0) {
             add(&layout, .empty, if (snapshot.available) "No deaths in last 15s" else "Recent deaths unavailable", columns);
@@ -105,9 +106,11 @@ test "loss view shows recorded category values by player and only recent unit co
     var groups = [_]losses.Group{.{ .owner = 7, .name = name, .recent = 4 }};
     const result = build(&.{ .available = true, .groups = &groups }, &stats, &players, 12, 40);
     try std.testing.expectEqual(@as(usize, 12), result.count);
+    try std.testing.expect(result.rows[1].resource_values and result.rows[2].resource_values and result.rows[3].resource_values);
+    try std.testing.expect(!result.rows[0].resource_values and !result.rows[5].resource_values and !result.rows[7].resource_values);
     try std.testing.expectEqualStrings("Army: M:950 V:350", std.mem.sliceTo(&result.rows[1].text, 0));
-    try std.testing.expectEqualStrings("Economy: M:400 V:0", std.mem.sliceTo(&result.rows[2].text, 0));
-    try std.testing.expectEqualStrings("Technology: M:150 V:100", std.mem.sliceTo(&result.rows[3].text, 0));
+    try std.testing.expectEqualStrings("Econ: M:400 V:0", std.mem.sliceTo(&result.rows[2].text, 0));
+    try std.testing.expectEqualStrings("Tech: M:150 V:100", std.mem.sliceTo(&result.rows[3].text, 0));
     try std.testing.expectEqualStrings("Deaths last 15s:", std.mem.sliceTo(&result.rows[4].text, 0));
     try std.testing.expectEqualStrings("Marine: 4", std.mem.sliceTo(&result.rows[5].text, 0));
     try std.testing.expectEqualStrings("Bob", std.mem.sliceTo(&result.rows[6].text, 0));
@@ -124,6 +127,7 @@ test "loss view distinguishes unavailable and missing category data from zero" {
     var stats: data.PlayerStats = .{ .available = true, .player_ids = .{ 3, 0 } };
     stats.items[0] = .{ .game_loop = 0, .minerals = 0, .vespene = 0, .food_used = 0, .food_cap = 0, .worker_supply = 0 };
     const missing = build(&.{ .available = true }, &stats, &players, 6, 40);
+    try std.testing.expect(!missing.rows[1].resource_values);
     try std.testing.expectEqualStrings("Army: unavailable", std.mem.sliceTo(&missing.rows[1].text, 0));
     const zero: data.ResourceLoss = .{ .minerals = 0, .vespene = 0 };
     stats.items[0].?.resource_losses = .{ .army = zero, .economy = zero, .technology = zero };

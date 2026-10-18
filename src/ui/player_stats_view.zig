@@ -7,6 +7,7 @@ pub const Layout = struct {
     count: usize = 0,
     columns: usize = 0,
     headings: [max_rows]bool = @splat(false),
+    resource_values: [max_rows]bool = @splat(false),
     fn add(self: *Layout, value: []const u8) void {
         const n = @min(value.len, self.lines[0].len);
         @memcpy(self.lines[self.count][0..n], value[0..n]);
@@ -38,6 +39,7 @@ pub fn build(players: *const data.Players, stats: data.PlayerStats, rows: usize)
         layout.headings[layout.count] = true;
         layout.add(name);
         if (sample) |s| {
+            layout.resource_values[layout.count] = true;
             layout.add(std.fmt.bufPrint(&buffer, "M:{d} V:{d}", .{ s.minerals, s.vespene }) catch unreachable);
             var used: [24]u8 = undefined;
             var cap: [24]u8 = undefined;
@@ -69,6 +71,8 @@ test "stats formatting shows player names, fractional supply, missing data and b
     try std.testing.expectEqualStrings("Alice", std.mem.sliceTo(&layout.lines[0], 0));
     try std.testing.expect(layout.headings[0] and layout.headings[3]);
     try std.testing.expect(!layout.headings[1] and !layout.headings[2] and !layout.headings[4]);
+    try std.testing.expect(layout.resource_values[1]);
+    try std.testing.expect(!layout.resource_values[0] and !layout.resource_values[2] and !layout.resource_values[4]);
     try std.testing.expectEqualStrings("M:123 V:55", std.mem.sliceTo(&layout.lines[1], 0));
     try std.testing.expectEqualStrings("W:12 S:13.5 / 200", std.mem.sliceTo(&layout.lines[2], 0));
     try std.testing.expectEqualStrings("Waiting for first stat sample", std.mem.sliceTo(&layout.lines[4], 0));

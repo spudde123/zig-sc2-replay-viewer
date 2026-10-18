@@ -265,8 +265,24 @@ pub const Renderer = struct {
             text.origin((rect.x + 10) / cell, (rect.y + 20 + @as(f32, @floatFromInt(i)) * 14) / cell);
             text.home();
             if (layout.headings[i]) text.color3b(170, 200, 230) else text.color3b(235, 235, 235);
-            text.puts(std.mem.sliceTo(line, 0));
+            const value = std.mem.sliceTo(line, 0);
+            if (layout.resource_values[i]) drawResourceText(value) else text.puts(value);
         }
+    }
+
+    /// Only numeric resource rows call this; names and other labels stay neutral.
+    fn drawResourceText(value: [:0]const u8) void {
+        var offset: usize = 0;
+        for (@import("resource_text.zig").spans(value)) |maybe_span| {
+            const span = maybe_span orelse continue;
+            text.color3b(235, 235, 235);
+            text.putr(value[offset..], @intCast(span.begin - offset));
+            text.color3b(span.color[0], span.color[1], span.color[2]);
+            text.putr(value[span.begin..], @intCast(span.end - span.begin));
+            offset = span.end;
+        }
+        text.color3b(235, 235, 235);
+        text.putr(value[offset..], @intCast(value.len - offset));
     }
 
     fn drawProduction(self: *Renderer, layout: *const production.Layout, visible: bool, tab: inventory.Tab, width: f32, height: f32) void {
@@ -300,7 +316,7 @@ pub const Renderer = struct {
                 text.putr(row_text[counts.ready_begin..], @intCast(counts.building_begin - counts.ready_begin));
                 if (counts.building == 0) text.color3b(145, 150, 158) else text.color3b(240, 195, 110);
                 text.puts(row_text[counts.building_begin..]);
-            } else text.puts(row_text);
+            } else if (row.resource_values) drawResourceText(row_text) else text.puts(row_text);
             const bars_x = rect.x + rect.width - 206;
             for (row.bars[0..row.bar_count], 0..) |progress, j| {
                 const unknown = j >= row.bar_count - row.unknown_bars;

@@ -134,7 +134,8 @@ Resource losses are recorded in player-stat samples, normally every 160 loops
 (about **7.14 game seconds**). Values use the latest sample at or before the
 displayed frame, so they update less frequently than the recent unit list.
 Minerals (`M`) and vespene (`V`) stay separate (e.g. `Army: M:950 V:350`);
-no unit-cost estimation is used.
+no unit-cost estimation is used. In both Losses and Resources, `M:X` is mineral
+blue and `V:Y` is vespene green; other labels remain neutral.
 Signed counters, including occasional negative values, are preserved as recorded.
 
 The recent list comes directly from tracker death events, not disappearing units
