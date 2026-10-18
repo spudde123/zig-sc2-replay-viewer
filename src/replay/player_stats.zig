@@ -302,6 +302,7 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
     var player: ?u32 = null;
     var values: [5]?u32 = @splat(null);
     var lost: [6]?i32 = @splat(null);
+    var friendly_fire: [6]?i32 = @splat(null);
     const fields = try reader.structure();
     for (0..fields) |_| {
         switch (try reader.vint()) {
@@ -318,6 +319,9 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
                         17...22 => |field| lost[@intCast(field - 17)] = try reader.signedInteger(),
                         29 => values[2] = try reader.integer(),
                         30 => values[3] = try reader.integer(),
+                        // Same category order; cancellations put the building
+                        // cost here and the refund as a negative lost value.
+                        33...38 => |field| friendly_fire[@intCast(field - 33)] = try reader.signedInteger(),
                         else => try reader.skip(0),
                     }
                 }
@@ -336,17 +340,21 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
         .food_used = used,
         .food_cap = @min(200, @as(f32, @floatFromInt(values[3] orelse return error.MissingPlayerStats)) / 4096),
         .worker_supply = workers,
-        .resource_losses = if (allLossFieldsPresent(lost)) .{
-            .army = .{ .minerals = lost[0].?, .vespene = lost[3].? },
-            .economy = .{ .minerals = lost[1].?, .vespene = lost[4].? },
-            .technology = .{ .minerals = lost[2].?, .vespene = lost[5].? },
-        } else null,
+        .resource_losses = try combinedResourceLosses(lost, friendly_fire),
     } };
 }
 
-fn allLossFieldsPresent(fields: [6]?i32) bool {
-    for (fields) |value| if (value == null) return false;
-    return true;
+fn combinedResourceLosses(lost: [6]?i32, friendly_fire: [6]?i32) !?data.ResourceLosses {
+    var total: [6]i32 = undefined;
+    for (lost, friendly_fire, &total) |enemy, own, *value| {
+        value.* = std.math.add(i32, enemy orelse return null, own orelse return null) catch
+            return error.InvalidTrackerEncoding;
+    }
+    return .{
+        .army = .{ .minerals = total[0], .vespene = total[3] },
+        .economy = .{ .minerals = total[1], .vespene = total[4] },
+        .technology = .{ .minerals = total[2], .vespene = total[5] },
+    };
 }
 
 const TrackedUnit = struct { owner: u32, name: losses.Name };
@@ -465,18 +473,26 @@ const TestTracker = struct {
         }
     }
     fn stats(self: *TestTracker, delta: u32, player: u32, lost: []const i32) !void {
+        try self.statsWithFriendlyFire(delta, player, lost, &.{ 0, 0, 0, 0, 0, 0 });
+    }
+    fn statsWithFriendlyFire(self: *TestTracker, delta: u32, player: u32, lost: []const i32, friendly_fire: []const i32) !void {
         try self.raw(&.{ 3, 0 });
         try self.integer(delta);
         try self.integer(0);
         try self.raw(&.{ 5, 4, 0 }); // Two event fields; player ID first.
         try self.integer(player);
         try self.raw(&.{ 2, 5 }); // Stats field, nested structure.
-        try self.vint(@intCast(5 + lost.len));
+        try self.vint(@intCast(5 + lost.len + friendly_fire.len));
         for ([_]u32{ 0, 1, 4, 29, 30 }) |field| {
             try self.vint(field);
             try self.integer(0);
         }
         for (lost, 17..) |value, field| {
+            try self.vint(@intCast(field));
+            try self.raw(&.{9});
+            try self.vint(value);
+        }
+        for (friendly_fire, 33..) |value, field| {
             try self.vint(@intCast(field));
             try self.raw(&.{9});
             try self.vint(value);
@@ -543,13 +559,13 @@ test "missing resource loss fields do not become fabricated zero values" {
     var fixture: TestTracker = .{ .allocator = std.testing.allocator };
     defer fixture.bytes.deinit(fixture.allocator);
     const zeros = [_]i32{ 0, 0, 0, 0, 0, 0 };
-    // No fields, incomplete fields, and a complete recorded zero sample.
-    for ([_]usize{ 0, 5, 6 }) |count| {
+    // Both components must be complete; missing friendly fire is not zero.
+    for ([_][2]usize{ .{ 0, 6 }, .{ 5, 6 }, .{ 6, 0 }, .{ 6, 5 }, .{ 6, 6 } }) |counts| {
         fixture.bytes.clearRetainingCapacity();
-        try fixture.stats(0, 3, zeros[0..count]);
+        try fixture.statsWithFriendlyFire(0, 3, zeros[0..counts[0]], zeros[0..counts[1]]);
         const timeline = try decode(std.testing.allocator, fixture.bytes.items);
         defer timeline.deinit(std.testing.allocator);
-        try std.testing.expectEqual(count == 6, timeline.samples[0].values.resource_losses != null);
+        try std.testing.expectEqual(counts[0] == 6 and counts[1] == 6, timeline.samples[0].values.resource_losses != null);
     }
 }
 

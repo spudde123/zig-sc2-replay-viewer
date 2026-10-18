@@ -110,7 +110,8 @@ pub const Scene = struct {
     }
 };
 
-/// Recorded cumulative losses, using SC2's categories (economy is not workers-only).
+/// Cumulative lost + friendly-fire resources, using SC2's categories.
+/// Economy is not workers-only.
 // Signed in the replay schema; preserve any game-recorded accounting adjustments.
 pub const ResourceLoss = struct { minerals: i32, vespene: i32 };
 pub const ResourceLosses = struct { army: ResourceLoss, economy: ResourceLoss, technology: ResourceLoss };

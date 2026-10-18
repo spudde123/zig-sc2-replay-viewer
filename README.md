@@ -125,7 +125,8 @@ the titles. Selecting a tab opens the panel; **P** or **Hide / Show** collapses 
   Econ is SC2's economy category, not workers only. The recent list is independent
   of camera visibility and includes structures, unfinished construction and
   temporary units.
-  The game's resource counters are shown as recorded, including negative values.
+  Totals combine the game's lost-resource and friendly-fire counters, including
+  self-inflicted losses and cancellation penalties.
 
 Lists share space between players and show overflow counts when space runs out.
 Unit/structure inventories count reported units, not inferred hidden units.
