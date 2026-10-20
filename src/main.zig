@@ -279,6 +279,7 @@ fn run(init: std.process.Init) !void {
         .width = 960,
         .height = 720,
         .window_title = "SC2 replay",
+        .icon = @import("ui/window_icon.zig").desc,
         .high_dpi = true,
         .logger = .{ .func = sokol.log.func },
     });
