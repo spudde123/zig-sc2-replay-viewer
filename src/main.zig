@@ -15,6 +15,14 @@ fn handleSignal(_: std.posix.SIG) callconv(.c) void {
     interrupted.store(true, .release);
 }
 
+// Sokol panics, Zig panics and C asserts all end in abort(), which skips the
+// worker's deferred cleanup. Kill SC2 here, then re-raise: RESETHAND has already
+// restored the default action, so the process still dies with SIGABRT.
+fn handleAbort(_: std.posix.SIG) callconv(.c) void {
+    @import("replay/replay_session.zig").killChildOnCrash();
+    _ = std.os.linux.kill(std.os.linux.getpid(), .ABRT);
+}
+
 const App = struct {
     worker: replay.Worker,
     options: cli.Options,
@@ -232,6 +240,8 @@ fn run(init: std.process.Init) !void {
     std.posix.sigaction(.TERM, &action, &old_term);
     defer std.posix.sigaction(.INT, &old_int, null);
     defer std.posix.sigaction(.TERM, &old_term, null);
+    const abort_action: std.posix.Sigaction = .{ .handler = .{ .handler = handleAbort }, .mask = std.posix.sigemptyset(), .flags = std.posix.SA.RESETHAND };
+    std.posix.sigaction(.ABRT, &abort_action, null);
     const allocator = init.gpa;
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     var options = cli.parse(args) catch |err| {

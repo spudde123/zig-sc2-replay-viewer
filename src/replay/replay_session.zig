@@ -4,6 +4,23 @@ const sc2 = @import("zig-sc2");
 const protocol = sc2.sc2p;
 const Client = sc2.ws.WebSocketClient;
 
+/// PID of the live SC2 child, so a crash handler can still terminate it when
+/// the normal deferred close() will never run. 0 = none, `spawning` = fork in flight.
+var live_child = std.atomic.Value(std.posix.pid_t).init(0);
+const spawning: std.posix.pid_t = -1;
+
+/// Async-signal-safe (atomics and raw syscalls only). For abnormal exits only.
+/// Startup crashes race with the worker's spawn, so briefly wait for the PID.
+pub fn killChildOnCrash() void {
+    var waited_ms: u32 = 0;
+    while (live_child.load(.acquire) == spawning and waited_ms < 2000) : (waited_ms += 1) {
+        const ms: std.os.linux.timespec = .{ .sec = 0, .nsec = std.time.ns_per_ms };
+        _ = std.os.linux.nanosleep(&ms, null);
+    }
+    const pid = live_child.swap(0, .acq_rel);
+    if (pid > 0) _ = std.os.linux.kill(pid, .KILL);
+}
+
 pub const ReplaySession = struct {
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -54,8 +71,17 @@ pub const ReplaySession = struct {
         };
         reservation.deinit(io);
         const latest = try latestBuild(allocator, io, config.installation);
-        var child = try launch(allocator, io, config, latest);
-        errdefer child.kill(io);
+        live_child.store(spawning, .release);
+        var child = launch(allocator, io, config, latest) catch |err| {
+            live_child.store(0, .release);
+            return err;
+        };
+        live_child.store(child.id orelse 0, .release);
+        errdefer {
+            // Forget the PID before reaping so a crash handler cannot hit a recycled PID.
+            live_child.store(0, .release);
+            child.kill(io);
+        }
         var client = try connect(io, config.port, response_allocator);
         errdefer client.deinit();
 
@@ -127,6 +153,7 @@ pub const ReplaySession = struct {
     /// that could hang forever on a stalled connection. kill also reaps the child.
     pub fn close(self: *ReplaySession) void {
         self.client.deinit();
+        live_child.store(0, .release);
         self.child.kill(self.io);
         self.allocator.free(self.map_name);
     }
