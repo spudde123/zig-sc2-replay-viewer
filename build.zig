@@ -3,7 +3,8 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const sokol = b.dependency("sokol", .{ .target = target, .optimize = optimize });
+    const vulkan = b.option(bool, "vulkan", "Use Vulkan instead of OpenGL");
+    const sokol = b.dependency("sokol", .{ .target = target, .optimize = optimize, .vulkan = vulkan });
     const sc2 = b.dependency("zig-sc2", .{ .target = target, .optimize = optimize });
     const imports: []const std.Build.Module.Import = &.{
         .{ .name = "sokol", .module = sokol.module("sokol") },
