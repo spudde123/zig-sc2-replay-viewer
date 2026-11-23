@@ -149,6 +149,8 @@ Resource values and cumulative losses use **recorded samples**, normally every
 **7.14 game seconds**, so they can lag behind the displayed action. Recent death
 counts use exact event timestamps instead. Values are pending before the first
 sample; missing statistics show **Unavailable** without stopping playback.
+The stats reader supports replay builds that use the same tracker schema as SC2
+4.10. Playback still needs a compatible SC2 executable, game data and map.
 
 ### Chat
 

@@ -1,4 +1,4 @@
-//! Economy samples and timestamped unit deaths from the build-75689 tracker.
+//! Economy samples and timestamped unit deaths from compatible SC2 trackers.
 //! Narrow replay reader: MPQ v3 single-unit tracker file and
 //! Blizzard's versioned tracker encoding. Not a general-purpose replay parser.
 //! Format/algorithm references: mpyq (BSD-2-Clause), s2protocol (MIT).
@@ -282,6 +282,84 @@ const Reader = struct {
     }
 };
 
+// Base builds whose tracker event IDs, payload schemas and loop-delta type
+// match s2protocol's protocol75689 (compare types after resolving type IDs).
+// Use explicit IDs, not a range: unverified builds could reuse a tag with a
+// different meaning. This says nothing about playback or MPQ compatibility.
+fn supportsTrackerBuild(build: u32) bool {
+    return switch (build) {
+        55505,
+        55958,
+        56787,
+        57507,
+        58400,
+        59587,
+        60196,
+        60321,
+        62347,
+        62848,
+        63454,
+        64469,
+        65094,
+        65384,
+        65895,
+        66668,
+        67188,
+        67926,
+        69232,
+        70154,
+        71061,
+        71523,
+        71663,
+        72282,
+        73286,
+        73559,
+        73620,
+        74071,
+        74456,
+        74741,
+        75025,
+        75689,
+        75800,
+        76052,
+        76114,
+        77379,
+        77535,
+        77661,
+        78285,
+        80669,
+        80949,
+        81009,
+        82457,
+        82893,
+        83830,
+        84643,
+        86383,
+        87702,
+        88500,
+        89634,
+        89720,
+        90136,
+        90779,
+        90870,
+        91115,
+        92028,
+        92174,
+        92440,
+        93272,
+        93333,
+        95248,
+        95299,
+        97364,
+        97425,
+        97563,
+        98310,
+        98745,
+        => true,
+        else => false,
+    };
+}
+
 fn checkBuild(bytes: []const u8) !void {
     var reader: Reader = .{ .bytes = bytes };
     var build: ?u32 = null;
@@ -294,8 +372,8 @@ fn checkBuild(bytes: []const u8) !void {
             }
         } else try reader.skip(0);
     }
-    if (build != 75689) return error.UnsupportedReplayBuild;
     if (reader.pos != bytes.len) return error.InvalidTrackerEncoding;
+    if (!supportsTrackerBuild(build orelse return error.UnsupportedReplayBuild)) return error.UnsupportedReplayBuild;
 }
 
 fn readSample(reader: *Reader, loop: u32) !Sample {
@@ -314,7 +392,7 @@ fn readSample(reader: *Reader, loop: u32) !Sample {
                         0 => values[0] = try reader.integer(),
                         1 => values[1] = try reader.integer(),
                         4 => values[4] = try reader.integer(),
-                        // Build 75689: minerals lost Army/Economy/Technology,
+                        // Minerals lost Army/Economy/Technology,
                         // then vespene lost in the same category order.
                         17...22 => |field| lost[@intCast(field - 17)] = try reader.signedInteger(),
                         29 => values[2] = try reader.integer(),
@@ -451,6 +529,11 @@ const TestTracker = struct {
         try self.raw(&.{9});
         try self.vint(value);
     }
+    fn header(self: *TestTracker, build: u32) !void {
+        // One header field (m_version), one version field (m_baseBuild).
+        try self.raw(&.{ 5, 2, 2, 5, 2, 10 });
+        try self.integer(build);
+    }
     fn event(self: *TestTracker, id: u32, delta: u32, index: u32, recycle: u32, name: ?[]const u8, owner: ?u32) !void {
         try self.raw(&.{ 3, 0 }); // loop delta choice
         try self.integer(delta);
@@ -516,6 +599,23 @@ const TestTracker = struct {
         try self.raw(&.{ 3, 0, 9, 0, 9, 14, 5, 0 });
     }
 };
+
+test "replay header selects verified tracker builds only" {
+    var fixture: TestTracker = .{ .allocator = std.testing.allocator };
+    defer fixture.bytes.deinit(fixture.allocator);
+    for ([_]u32{ 55505, 73620, 75689, 98745 }) |build| {
+        fixture.bytes.clearRetainingCapacity();
+        try fixture.header(build);
+        try checkBuild(fixture.bytes.items);
+    }
+    for ([_]u32{ 54518, 75690, 98746 }) |build| {
+        fixture.bytes.clearRetainingCapacity();
+        try fixture.header(build);
+        try std.testing.expectError(error.UnsupportedReplayBuild, checkBuild(fixture.bytes.items));
+    }
+    try std.testing.expectError(error.UnsupportedReplayBuild, checkBuild(&.{ 5, 0 }));
+    try std.testing.expectError(error.TruncatedReplay, checkBuild(&.{ 5, 2, 2, 5, 2, 10, 9 }));
+}
 
 test "recorded resource losses decode categories and select preceding sample per player" {
     var fixture: TestTracker = .{ .allocator = std.testing.allocator };
