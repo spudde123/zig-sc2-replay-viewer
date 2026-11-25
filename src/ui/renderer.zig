@@ -135,7 +135,7 @@ pub const Renderer = struct {
             lines += 1;
         }
         // Shrink the character cells only when the window is too narrow for the HUD.
-        const cell_size = @min(16, @max(1, width - 40) / @as(f32, @floatFromInt(columns)));
+        const cell_size = @min(14, @max(1, width - 40) / @as(f32, @floatFromInt(columns)));
         const hud_right = 12 + @as(f32, @floatFromInt(columns)) * cell_size + 16;
         const hud_bottom = 12 + @as(f32, @floatFromInt(lines)) * cell_size + 16;
         self.hud_rect = .{ .x = 12, .y = 12, .width = hud_right - 12, .height = hud_bottom - 12 };
@@ -216,7 +216,7 @@ pub const Renderer = struct {
         }
         solidRect(.{ .x = self.info_rect.x - 1, .y = self.info_rect.y - 1, .width = self.info_rect.width + 2, .height = self.info_rect.height + 2 }, .{ 0.2, 0.23, 0.28 });
         solidRect(self.info_rect, .{ 0.04, 0.05, 0.07 });
-        text.font(0);
+        text.font(1);
         text.canvas(width * 8 / cell_size, height * 8 / cell_size);
         text.origin(20 / cell_size, 20 / cell_size);
         text.home();
@@ -353,7 +353,7 @@ pub const Renderer = struct {
     fn drawPlayerLabels(self: *Renderer, labels: @import("../replay/player_labels.zig").Labels, width: f32, height: f32) void {
         const rect = self.minimap_rect;
         if (rect.width < 8 or rect.height < 8) return;
-        text.font(0);
+        text.font(1);
         text.color3b(255, 255, 255);
         for (labels.items[0..labels.count]) |label| {
             const name = std.mem.sliceTo(&label.name, 0);
